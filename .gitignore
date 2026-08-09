@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+.vercel
+.idea/
+.vscode/
+*.log
+node_modules/
+
+# Original unsorted source images — kept on disk, but they are byte-identical
+# duplicates of the renamed files in assets/, so they stay out of the repo.
+photo_*.jpg
+slinglogo.jpg
