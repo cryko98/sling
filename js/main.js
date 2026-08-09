@@ -176,6 +176,17 @@ function startReveals() {
     });
   }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
   items.forEach(i => revealObs.observe(i));
+
+  /* Belt and braces: IntersectionObserver only reports once the page paints.
+     If anything above the fold is still hidden shortly after load, reveal it
+     from plain geometry — the hero headline must never be invisible. */
+  setTimeout(() => {
+    items.forEach(el => {
+      if (el.classList.contains('is-in')) return;
+      const r = el.getBoundingClientRect();
+      if (r.top < innerHeight && r.bottom > 0) el.classList.add('is-in');
+    });
+  }, 2500);
 }
 
 /* =========================================================
