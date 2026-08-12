@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>The Retarded Bull Run — $SLING Game</title>
+<meta name="description" content="Three lanes. Infinite denial. Play The Retarded Bull Run — dodge the FUD, hop the dips, collect $SLING and upgrade the bull.">
+<meta name="theme-color" content="#06060A">
+<!-- Unfinished and deliberately unlinked from the site. Keep it out of search
+     results until it is good enough to ship. -->
+<meta name="robots" content="noindex, nofollow">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="The Retarded Bull Run — $SLING Game">
+<meta property="og:description" content="Dodge the bears, hop the dips, collect $SLING. How far can the bull run?">
+<meta property="og:image" content="assets/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@theslingbull">
+<meta name="twitter:title" content="The Retarded Bull Run — $SLING Game">
+<meta name="twitter:description" content="Dodge the bears, hop the dips, collect $SLING.">
+<meta name="twitter:image" content="assets/og-image.png">
+
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body class="gamepage">
+
+<div class="stage">
+  <canvas id="gameCanvas" role="img" aria-label="The Retarded Bull Run — a three-lane endless runner"></canvas>
+
+  <!-- ============ HUD ============ -->
+  <div class="hud" id="hud" hidden>
+    <div class="hud__tl">
+      <span class="hk">SCORE</span><b class="hv" id="hScore">0</b>
+      <span class="hk" style="margin-top:.35rem">DISTANCE</span><b class="hv hv--sm" id="hDist">0m</b>
+    </div>
+    <div class="hud__tc">
+      <span class="zonechip"><em></em><span id="hZone">NIGHT CITY</span></span>
+      <div class="powers" id="hPowers"></div>
+    </div>
+    <div class="hud__tr">
+      <span class="hud__coins"><i class="coin" aria-hidden="true"></i><b id="hCoins">0</b></span>
+      <span class="hk" style="margin-top:.35rem">BEST</span><b class="hv hv--sm" id="hBest">0</b>
+      <button class="hud__pause" id="hPause" title="Pause (P)">❚❚</button>
+    </div>
+    <div class="hud__mc">
+      <div class="combo" id="hCombo">x1<small>COMBO</small></div>
+    </div>
+    <div class="hud__bl">
+      <div class="mtick" id="hMissions"></div>
+    </div>
+  </div>
+
+  <div class="grade" aria-hidden="true"></div>
+  <div class="pops" id="pops"></div>
+  <div class="banner" id="banner"><div class="banner__k" id="bannerK">ZONE</div><div class="banner__v" id="bannerV"></div></div>
+
+  <!-- ============ TOUCH PAD ============ -->
+  <div class="pad" id="pad">
+    <button id="cLeft"  aria-label="Move left">◀</button>
+    <button id="cJump"  aria-label="Jump">▲</button>
+    <button id="cSlide" aria-label="Slide">▼</button>
+    <button id="cRight" aria-label="Move right">▶</button>
+  </div>
+
+  <div class="corner corner--br" id="cornerBR">
+    <button id="bFull" title="Fullscreen">FULLSCREEN</button>
+    <button id="bSound">SOUND</button>
+  </div>
+
+  <!-- ============ START ============ -->
+  <div class="ov" id="ovStart">
+    <div class="ov__in">
+      <img class="ov__bull" src="assets/logo.jpg" alt="The Retarded Bull" width="96" height="96">
+      <h1 class="ov__title">THE RETARDED<br><span class="txt-rainbow">BULL RUN</span></h1>
+      <p class="ov__sub">Collect $SLING. Dodge the bears. Deny the top.</p>
+      <div class="bank">BANK <b id="sBank">0</b> <i class="coin" aria-hidden="true"></i></div>
+      <div class="ov__cta">
+        <button class="btn btn--yellow btn--lg" id="bPlay">▶ START RUNNING</button>
+        <button class="btn btn--ghost btn--lg" id="bShop">UPGRADES</button>
+      </div>
+      <div class="ov__row">
+        <button class="btn btn--ghost btn--sm" id="bHelp">HOW TO PLAY</button>
+        <button class="btn btn--ghost btn--sm" id="bScores">HIGH SCORES</button>
+        <a class="btn btn--ghost btn--sm" href="index.html">← BACK TO $SLING</a>
+      </div>
+      <div class="ov__keys">
+        <span><b>← →</b> lane</span><span><b>↑ / SPACE</b> jump</span>
+        <span><b>↓</b> slide</span><span><b>P</b> pause</span>
+      </div>
+      <p class="ov__sub" style="margin:1rem 0 0;font-size:11px">PERSONAL BEST · <b id="sBest">0</b></p>
+    </div>
+  </div>
+
+  <!-- ============ PAUSE ============ -->
+  <div class="ov" id="ovPause" hidden>
+    <div class="ov__in">
+      <h2 class="ov__title ov__title--sm">PAUSED</h2>
+      <p class="ov__sub">The bull is only catching his breath.</p>
+      <div class="ov__cta">
+        <button class="btn btn--yellow btn--lg" id="bResume">▶ RESUME</button>
+        <button class="btn btn--ghost btn--lg" id="bQuit">END RUN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ GAME OVER ============ -->
+  <div class="ov" id="ovOver" hidden>
+    <div class="ov__in">
+      <div class="badge" id="oBadge" hidden>★ NEW PERSONAL BEST ★</div>
+      <h2 class="ov__title ov__title--sm">RUN <span class="ov__red">ENDED</span></h2>
+      <div class="rank" id="oRank">—</div>
+      <div class="stats">
+        <div><span>SCORE</span><b id="oScore">0</b></div>
+        <div><span>$SLING</span><b id="oCoins">0</b></div>
+        <div><span>DISTANCE</span><b id="oDist">0m</b></div>
+        <div><span>BEST</span><b id="oBest">0</b></div>
+      </div>
+      <div id="oMissions" style="margin-bottom:1rem"></div>
+      <div class="ov__cta">
+        <button class="btn btn--yellow btn--lg" id="bRevive" hidden>SECOND WIND</button>
+        <button class="btn btn--yellow btn--lg" id="bAgain">↻ RUN AGAIN</button>
+        <button class="btn btn--ghost btn--lg" id="bShop2">UPGRADES</button>
+      </div>
+      <div class="ov__row">
+        <a class="btn btn--ghost btn--sm" id="oShare" href="#" target="_blank" rel="noopener">SHARE ON X</a>
+        <button class="btn btn--ghost btn--sm" id="bMenu">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHOP ============ -->
+  <div class="ov" id="ovShop" hidden>
+    <div class="ov__in ov__in--wide">
+      <h2 class="ov__title ov__title--sm">THE <span class="txt-rainbow">UPGRADE</span> DESK</h2>
+      <p class="ov__sub">Coins you bank carry over between runs. Spend them on conviction.</p>
+      <div class="bank">BANK <b id="shBank">0</b> <i class="coin" aria-hidden="true"></i></div>
+      <div class="shop" id="shopGrid"></div>
+      <div class="ov__row"><button class="btn btn--yellow btn--lg" id="bShopClose">DONE</button></div>
+    </div>
+  </div>
+
+  <!-- ============ HIGH SCORES ============ -->
+  <div class="ov" id="ovScores" hidden>
+    <div class="ov__in">
+      <h2 class="ov__title ov__title--sm">HALL OF <span class="txt-rainbow">DENIAL</span></h2>
+      <p class="ov__sub">Your five best runs, stored on this device.</p>
+      <ol class="lb" id="lbList"></ol>
+      <div class="ov__row"><button class="btn btn--yellow btn--lg" id="bScoresClose">DONE</button></div>
+    </div>
+  </div>
+
+  <!-- ============ HELP ============ -->
+  <div class="ov" id="ovHelp" hidden>
+    <div class="ov__in ov__in--wide">
+      <h2 class="ov__title ov__title--sm">HOW TO <span class="txt-rainbow">RUN</span></h2>
+      <div class="help">
+        <section>
+          <h3>OBSTACLES</h3>
+          <ul>
+            <li><span class="sw sw--dip"></span><span><b>DIP</b> low red candle — <em>jump it</em></span></li>
+            <li><span class="sw sw--fud"></span><span><b>FUD</b> overhead gantry — <em>slide under</em></span></li>
+            <li><span class="sw sw--bear"></span><span><b>BEAR</b> solid wall — <em>switch lane</em></span></li>
+            <li><span class="sw sw--hands"></span><span><b>PAPER HANDS</b> long train — <em>switch lane early</em></span></li>
+          </ul>
+        </section>
+        <section>
+          <h3>PICKUPS</h3>
+          <ul>
+            <li><span class="sw sw--coin"></span><span><b>$SLING</b> — banked between runs</span></li>
+            <li><span class="sw sw--visor"></span><span><b>VISOR</b> — <em>invincible</em>, smash through anything</span></li>
+            <li><span class="sw sw--magnet"></span><span><b>MAGNET</b> — drags every coin to your lane</span></li>
+            <li><span class="sw sw--x2"></span><span><b>2X</b> — double score</span></li>
+          </ul>
+        </section>
+        <section>
+          <h3>SCORING</h3>
+          <ul>
+            <li><span class="sw" style="border:0;background:none"></span><span><b>COMBO</b> — chain coins without missing to build up to <em>x5</em></span></li>
+            <li><span class="sw" style="border:0;background:none"></span><span><b>NEAR MISS</b> — shave past an obstacle for bonus points</span></li>
+            <li><span class="sw" style="border:0;background:none"></span><span><b>ZONES</b> — every 800m the world shifts and the pace climbs</span></li>
+            <li><span class="sw" style="border:0;background:none"></span><span><b>MISSIONS</b> — three at a time, each pays out coins</span></li>
+          </ul>
+        </section>
+      </div>
+      <div class="ov__keys">
+        <span><span class="key">←</span><span class="key">→</span> lane</span>
+        <span><span class="key">↑</span><span class="key">W</span><span class="key">␣</span> jump</span>
+        <span><span class="key">↓</span><span class="key">S</span> slide</span>
+        <span><span class="key">P</span> pause</span>
+        <span>mobile: <em>swipe to steer, tap to jump</em></span>
+      </div>
+      <div class="ov__row"><button class="btn btn--yellow btn--lg" id="bHelpClose">GOT IT</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="ovFail" hidden>
+  <div class="ov__in">
+    <h2 class="ov__title ov__title--sm" id="failTitle">CANNOT <span class="ov__red">START</span></h2>
+    <p class="ov__sub" id="failMsg"></p>
+    <div class="ov__cta"><a class="btn btn--yellow btn--lg" href="index.html">← BACK TO $SLING</a></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js" } }
+</script>
+<script type="module">
+  /* Report the ACTUAL reason. Opening this file directly (file://) blocks ES
+     module loading via CORS, which is by far the most likely failure and has
+     nothing to do with WebGL — saying "no WebGL" there sends people hunting
+     for a graphics problem that does not exist. */
+  function fail(title, msg) {
+    document.querySelectorAll('.ov').forEach(o => o.hidden = true);
+    document.getElementById('failTitle').innerHTML = title;
+    document.getElementById('failMsg').innerHTML = msg;
+    document.getElementById('ovFail').hidden = false;
+  }
+  const isFile = location.protocol === 'file:' || location.protocol === 'data:';
+  try {
+    if (isFile) throw new Error('file-protocol');
+    // WebGL check before we bother loading 700KB of engine
+    const probe = document.createElement('canvas');
+    if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) throw new Error('no-webgl');
+    await import('./js/game3d.js');
+  } catch (err) {
+    console.error(err);
+    if (isFile) {
+      fail('OPEN IT OVER <span class="ov__red">HTTP</span>',
+        'This page is running from <code>' + location.protocol + '</code>. Browsers block ES modules on ' +
+        'that protocol, so the 3D engine can never load — WebGL is fine.<br><br>' +
+        'Double-click <b>serve.cmd</b> in the project folder, then open ' +
+        '<b>http://localhost:8080/game.html</b>. Deployed on Vercel it just works.');
+    } else if (err && err.message === 'no-webgl') {
+      fail('NO <span class="ov__red">WEBGL</span>',
+        'This browser could not start 3D rendering. Try a current Chrome, Edge, Firefox or Safari ' +
+        'with hardware acceleration enabled.');
+    } else {
+      fail('ENGINE <span class="ov__red">FAILED</span>',
+        'The 3D engine could not load. Check your connection — Three.js is fetched from a CDN — ' +
+        'then reload. The browser console has the details.');
+    }
+  }
+</script>
+</body>
+</html>

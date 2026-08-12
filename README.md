@@ -16,29 +16,77 @@ Official site for **$SLING**, the community-owned Solana meme coin.
 A single-page static site. **No build step, no dependencies, no framework** — just HTML, CSS and vanilla JS, so it deploys anywhere instantly.
 
 ```
-index.html          markup
-css/style.css       all styling + animation
-js/main.js          effects + live market engine
-js/game.js          The Retarded Bull Run (endless runner)
+index.html          the site — no game code ships here
+css/style.css       site styling + animation
+js/main.js          site effects + live market engine
 assets/             logo, favicons, meme archive
 vercel.json         caching + security headers
+serve.cmd           double-click for a local preview server
+tools/serve.ps1     the server itself (pure PowerShell, nothing to install)
+
+game.html           UNFINISHED, unlinked — see below
+css/game.css
+js/game3d.js
 ```
 
-## The Retarded Bull Run
+The site is dependency-free vanilla HTML/CSS/JS.
 
-A three-lane endless runner built into the page — canvas only, no engine, no
-sprite sheets. The bull is **drawn procedurally** (horns, striped beanie,
-rainbow visor, blue teardrop earrings, yellow tank top) so it can actually
-animate a run cycle, jump and slide; the meme JPGs have no alpha channel to cut
-a sprite from.
+## Local preview
+
+`game.html` uses ES modules, and browsers **block ES modules on `file://`** — so
+double-clicking the HTML will never start the game (WebGL is not the problem).
+Double-click **`serve.cmd`** instead; it starts a tiny PowerShell HTTP server on
+`http://localhost:8080` and opens a browser. Nothing to install.
+
+`index.html` alone does work from `file://`, since it uses classic scripts.
+
+## The Retarded Bull Run — unfinished, not part of the site
+
+> **Status: parked.** The game is deliberately **not linked from anywhere** on
+> the site and carries `noindex`. It is kept in the repo so the work is not lost,
+> not because it is ready. Judged not good enough to ship.
+>
+> Known open bug: served over HTTP the game boots straight to the
+> "RUN ENDED" overlay instead of the start screen.
+>
+> The honest ceiling: the character is assembled from primitives (boxes,
+> capsules, spheres) in code. Getting to a genuinely professional-looking
+> character needs a modelled and rigged **GLTF** asset; the engine, camera,
+> physics and animation system are already in place to accept one.
+
+The game page pulls Three.js via an import map from jsDelivr — the only
+third-party runtime dependency anywhere in the repo, and it never loads for
+normal site visitors.
+
+### What is built
+
+A full-screen 3D endless runner on its own page (`game.html`), rendered with
+**Three.js / WebGL** and a chase camera behind the bull.
+
+The bull is a **jointed rig**, not a static model: pelvis → torso → head plus
+hip/knee/ankle and shoulder/elbow joints, so the run cycle is driven by real
+joint rotations (knees that only bend one way, counter-rotating torso, a head
+that stabilises against the twist, swinging tail). Run, jump and slide are
+separate poses blended with weights, so transitions read as motion rather than
+snapping.
 
 Controls: `← →` lane, `↑`/`Space` jump, `↓` slide, `P` pause. Touch: swipe to
-steer, tap to jump. Runs at a fixed 1280×720 internal resolution and is
-CSS-scaled, which keeps every coordinate in one predictable space.
+steer, tap to jump. Renders at the real viewport size and reframes for portrait.
 
 Obstacles map to the lore: **DIP** (hop it), **FUD** gantry (slide under),
 **BEAR** / **PAPER HANDS** (solid — change lane). Power-ups: visor
 (invincibility), magnet, 2×.
+
+### Progression
+
+- **Coin bank** persists between runs; spend it in the upgrade desk on magnet /
+  visor / 2× duration, a head start, or extra revives.
+- **Missions** — three at a time, each paying out coins; completed ones reroll.
+- **Zones** — every 800m the world shifts palette, sky, skyline and fog.
+- **Combo** — chain coins without missing to build up to x5.
+- **Near miss** — clearing an obstacle in your own lane pays a bonus.
+- **Second wind** — revive on the spot if you own one.
+- **Leaderboard** — your five best runs, stored on the device.
 
 ### Fairness is enforced, not assumed
 
@@ -55,9 +103,12 @@ Two further rules exist so deaths always read as the player's mistake:
 - Train segments are spaced 100 units so their hit windows are contiguous —
   otherwise the visual gaps between carriages looked passable but weren't.
 
-Validated with an auto-player stepping the real game logic: **14/14 runs survive
-5 minutes at maximum speed**. Append `?debug=1` to expose `window.__BULLRUN`
-(state plus `update`/`draw`/`start`) to re-run that kind of simulation; it is
+Gameplay still runs in the original validated "world units"; a single scale
+factor converts them to metres for the 3D scene, so every balance figure that
+was proven by simulation still holds. Re-verified after the 3D port with an
+auto-player stepping the real game logic: **12/12 runs survive 5 minutes at
+maximum speed**, and all seven obstacle/pose collision rules behave. Append
+`?debug=1` to expose `window.__BULLRUN` for that kind of simulation; it is
 absent otherwise.
 
 ## Live market data

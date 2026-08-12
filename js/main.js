@@ -130,8 +130,8 @@ function onScroll() {
 addEventListener('scroll', onScroll, { passive: true });
 onScroll();
 
-/* nav active link */
-const navLinks = $$('.nav__links a');
+/* nav active link — in-page anchors only, cross-page links are not sections */
+const navLinks = $$('.nav__links a[href^="#"]');
 const sections = navLinks.map(a => $(a.getAttribute('href'))).filter(Boolean);
 if (sections.length) {
   const spy = new IntersectionObserver(entries => {
@@ -179,12 +179,16 @@ function startReveals() {
 
   /* Belt and braces: IntersectionObserver only reports once the page paints.
      If anything above the fold is still hidden shortly after load, reveal it
-     from plain geometry — the hero headline must never be invisible. */
+     from plain geometry — the hero headline must never be invisible.
+     A zero-height viewport means we cannot judge visibility at all, so reveal
+     everything: a safety net that no-ops in the odd case is not a safety net. */
   setTimeout(() => {
+    const vh = innerHeight || 0;
     items.forEach(el => {
       if (el.classList.contains('is-in')) return;
+      if (!vh) { el.classList.add('is-in'); return; }
       const r = el.getBoundingClientRect();
-      if (r.top < innerHeight && r.bottom > 0) el.classList.add('is-in');
+      if (r.top < vh && r.bottom > 0) el.classList.add('is-in');
     });
   }, 2500);
 }

@@ -66,8 +66,7 @@
     <a href="#lore" data-scramble>Lore</a>
     <a href="#creed" data-scramble>Creed</a>
     <a href="#memes" data-scramble>Memes</a>
-    <a href="#game" data-scramble>Game</a>
-    <a href="#buy" data-scramble>Buy</a>
+    <a href="#buy" data-scramble>How to Buy</a>
   </nav>
   <div class="nav__right">
     <span class="nav__price" id="navPrice" title="Live price">
@@ -83,7 +82,6 @@
   <a href="#lore">Lore</a>
   <a href="#creed">Creed</a>
   <a href="#memes">Memes</a>
-  <a href="#game">Game</a>
   <a href="#buy">How to Buy</a>
   <div class="mobilemenu__soc">
     <a href="https://x.com/theslingbull" target="_blank" rel="noopener">X / Twitter</a>
@@ -417,109 +415,11 @@
   </div>
 </section>
 
-<!-- ============ GAME ============ -->
-<section class="section game" id="game">
-  <div class="wrap">
-    <header class="shead reveal">
-      <span class="shead__num">05</span>
-      <h2 class="shead__title">THE BULL <span class="txt-rainbow">RUN</span></h2>
-      <p class="shead__sub">Three lanes. Infinite denial. Outrun the FUD, hop the dips, collect $SLING — the bull does not stop.</p>
-    </header>
-
-    <div class="gamebox reveal">
-      <div class="gamebox__stage">
-        <canvas id="gameCanvas" width="1280" height="720" role="img"
-                aria-label="The Retarded Bull Run — a three-lane endless runner"></canvas>
-
-        <!-- HUD -->
-        <div class="ghud" id="ghud" hidden>
-          <div class="ghud__side">
-            <span class="ghud__k">SCORE</span><b class="ghud__v" id="gScore">0</b>
-            <span class="ghud__k">DISTANCE</span><b class="ghud__v ghud__v--sm" id="gDist">0m</b>
-          </div>
-          <div class="ghud__mid" id="gPower"></div>
-          <div class="ghud__side ghud__side--r">
-            <span class="ghud__coins"><i>🪙</i><b id="gCoins">0</b></span>
-            <span class="ghud__k">BEST</span><b class="ghud__v ghud__v--sm" id="gBestLive">0</b>
-            <button class="ghud__pause" id="gPauseBtn" title="Pause (P)">❚❚</button>
-          </div>
-        </div>
-
-        <!-- start screen -->
-        <div class="gover" id="gStart">
-          <div class="gover__inner">
-            <img class="gover__bull" src="assets/logo.jpg" alt="" width="96" height="96" loading="lazy">
-            <h3 class="gover__title">THE RETARDED<br><span class="txt-rainbow">BULL RUN</span></h3>
-            <p class="gover__sub">Collect $SLING. Dodge the bears. Deny the top.</p>
-            <button class="btn btn--yellow btn--lg" id="gPlay">▶ START RUNNING</button>
-            <div class="gover__keys">
-              <span><b>← →</b> switch lane</span>
-              <span><b>↑ / SPACE</b> jump</span>
-              <span><b>↓</b> slide</span>
-              <span><b>P</b> pause</span>
-            </div>
-            <p class="gover__best">PERSONAL BEST · <b id="gBest">0</b></p>
-          </div>
-        </div>
-
-        <!-- game over -->
-        <div class="gover gover--end" id="gOver" hidden>
-          <div class="gover__inner">
-            <div class="gover__badge" id="goBadge" hidden>★ NEW PERSONAL BEST ★</div>
-            <h3 class="gover__title gover__title--sm">RUN <span class="gover__red">ENDED</span></h3>
-            <div class="gover__rank" id="goRank">—</div>
-            <div class="gover__stats">
-              <div><span>SCORE</span><b id="goScore">0</b></div>
-              <div><span>$SLING</span><b id="goCoins">0</b></div>
-              <div><span>DISTANCE</span><b id="goDist">0m</b></div>
-              <div><span>BEST</span><b id="goBest">0</b></div>
-            </div>
-            <div class="gover__cta">
-              <button class="btn btn--yellow btn--lg" id="gAgain">↻ RUN AGAIN</button>
-              <a class="btn btn--ghost btn--lg" id="goShare" href="#" target="_blank" rel="noopener">SHARE ON X</a>
-            </div>
-          </div>
-        </div>
-
-        <!-- pause -->
-        <div class="gover gover--pause" id="gPause" hidden>
-          <div class="gover__inner">
-            <h3 class="gover__title gover__title--sm">PAUSED</h3>
-            <p class="gover__sub">The bull is only catching his breath.</p>
-            <button class="btn btn--yellow btn--lg" id="gResume">▶ RESUME</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- touch controls + options -->
-      <div class="gamebox__bar">
-        <div class="gpad">
-          <button id="gcLeft"  aria-label="Move left">◀</button>
-          <button id="gcJump"  aria-label="Jump">▲</button>
-          <button id="gcSlide" aria-label="Slide">▼</button>
-          <button id="gcRight" aria-label="Move right">▶</button>
-        </div>
-        <p class="gamebox__hint">Swipe or tap the board on mobile · arrow keys on desktop</p>
-        <button class="gsound" id="gSound" aria-pressed="true">🔊 SOUND ON</button>
-      </div>
-    </div>
-
-    <ul class="glegend reveal">
-      <li><span class="glegend__sw glegend__sw--dip"></span><b>DIP</b> low red candle — <em>jump it</em></li>
-      <li><span class="glegend__sw glegend__sw--fud"></span><b>FUD</b> overhead gantry — <em>slide under</em></li>
-      <li><span class="glegend__sw glegend__sw--bear"></span><b>BEAR / PAPER HANDS</b> solid wall — <em>switch lane</em></li>
-      <li><span class="glegend__sw glegend__sw--visor"></span><b>VISOR</b> — <em>6s invincibility</em></li>
-      <li><span class="glegend__sw glegend__sw--magnet"></span><b>MAGNET</b> — <em>pulls coins in</em></li>
-      <li><span class="glegend__sw glegend__sw--x2"></span><b>2X</b> — <em>double score</em></li>
-    </ul>
-  </div>
-</section>
-
 <!-- ============ BUY ============ -->
 <section class="section buy" id="buy">
   <div class="wrap">
     <header class="shead reveal">
-      <span class="shead__num">06</span>
+      <span class="shead__num">05</span>
       <h2 class="shead__title">HOW TO <span class="txt-rainbow">BUY</span></h2>
       <p class="shead__sub">Four steps between you and maximum conviction.</p>
     </header>
@@ -616,6 +516,5 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/main.js"></script>
-<script src="js/game.js" defer></script>
 </body>
 </html>
