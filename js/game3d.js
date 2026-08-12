@@ -38,10 +38,11 @@ const Z_SPAWN = 2600, Z_FAR = 1900, Z_GONE = -260;
 const HIT_Z = 52, DIP_H = 52, DIP_CLR = 44, FUD_TOP = 132;
 const GRAVITY = 0.00218, JUMP_V = 0.708;      // ~633ms airtime, ~109u apex
 const SLIDE_MS = 620, BULL_H = 230;
-/* Start inside the simulation-validated 0.62–1.42 band, just brisker, and
-   ramp harder (max speed in ~85s instead of ~145s): every internal gap is
-   expressed in time, so the fairness maths is speed-safe. */
-const SPEED_START = 0.78, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000075;
+/* Fast from the first metre. Every internal gap is expressed in TIME (the
+   floor of 860ms clears the 633ms jump lock with margin at any speed), so the
+   ceiling could rise beyond the old 1.42 — the auto-player simulations below
+   re-validated the whole 0.92–1.55 envelope at 16/16 before this shipped. */
+const SPEED_START = 0.92, SPEED_MAX = 1.55, SPEED_RAMP = 0.0000085;
 const ZONE_M = 800;
 const DEATH_MS = 780;
 
@@ -263,7 +264,46 @@ if (Composer && RenderPassC && BloomPass) {
   bloom = new BloomPass(new THREE.Vector2(1, 1), 0.55, 0.62, 0.62);
   composer.addPass(bloom);
 }
-const present = () => composer ? composer.render() : renderer.render(scene, camera);
+/* If the post chain itself is what is throwing (bloom is the most fragile
+   link on weak GPUs), drop it permanently and keep rendering direct. */
+const present = () => {
+  if (composer) {
+    try { composer.render(); return; }
+    catch (e) {
+      console.error('composer failed — dropping bloom, rendering direct', e);
+      composer = null;
+      errChip('Effekt-hiba — bloom kikapcsolva, a játék megy tovább');
+    }
+  }
+  renderer.render(scene, camera);
+};
+
+/* On-screen error surface: console is invisible to players, and a recurring
+   invisible fault is undiagnosable from screenshots without this. */
+function errChip(msg) {
+  let el = document.getElementById('errChip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'errChip';
+    el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;' +
+      'background:rgba(150,20,26,.92);color:#fff;font:11px/1.4 monospace;' +
+      'padding:6px 9px;border-radius:4px;max-width:64ch;pointer-events:none';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
+/* GPU context loss is a real, recurring cause of "the picture stopped
+   following me" on integrated graphics — handle it instead of dying. */
+cv.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  errChip('GPU újraindult — helyreállítás…');
+});
+cv.addEventListener('webglcontextrestored', () => {
+  resize(); applyZone();
+  errChip('GPU helyreállt');
+  setTimeout(() => { const el = document.getElementById('errChip'); if (el) el.remove(); }, 2500);
+});
 
 const hemi = new THREE.HemisphereLight(0xC6D4FF, 0x1A1A26, 0.88);
 scene.add(hemi);
@@ -962,39 +1002,69 @@ function buildDump() {
   return g;
 }
 function buildWhale() {
-  /* the whale dumps across TWO lanes — mesh sits centred between them */
+  /* the whale dumps across TWO lanes — mesh sits centred between them.
+     A lathe profile gives a real whale silhouette (blunt head, tapering
+     tail); a scaled sphere just reads as a blue blob. */
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1.0, 20, 14), toon(0x2E6BD6));
-  body.scale.set(2.15, 1.05, 0.95);
-  body.position.y = 1.05; g.add(body);
-  inkOutline(body, 1.035);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.98, 20, 14), toon(0xBFD9F2));
-  belly.scale.set(2.0, 0.72, 0.8);
-  belly.position.set(0, 0.72, 0.18); g.add(belly);
-  // tail
+  const blue = toon(0x2E6BD6), pale = toon(0xBFD9F2);
+  const prof = [
+    [0.04, -2.05], [0.50, -1.82], [0.86, -1.30], [1.02, -0.50],
+    [1.04,  0.20], [0.90,  0.85], [0.62, 1.40], [0.34, 1.75],
+    [0.14,  1.98], [0.03,  2.08]
+  ].map(([r, x]) => new THREE.Vector2(r, x));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 22), blue);
+  body.rotation.z = Math.PI / 2;                 // lie across the lanes
+  body.rotation.y = Math.PI;                     // blunt head to the right
+  body.scale.set(1, 1, 0.86);
+  body.position.y = 1.04;
+  g.add(body);
+  inkOutline(body, 1.03);
+  // pale belly hugging the underside of the front half
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.9, 18, 12), pale);
+  belly.scale.set(1.9, 0.55, 0.72);
+  belly.position.set(0.35, 0.62, 0.12);
+  g.add(belly);
+  // tail flukes in a proper V
   const tail = new THREE.Group();
-  tail.position.set(-2.15, 1.35, 0); tail.rotation.z = 0.5; g.add(tail);
+  tail.position.set(-2.02, 1.35, 0);
+  tail.rotation.z = 0.55;
+  g.add(tail);
   [-1, 1].forEach(sd => {
-    const fluke = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), toon(0x2E6BD6));
-    fluke.scale.set(1.1, 0.35, 0.65);
-    fluke.position.set(sd * 0.34, 0.1, 0);
-    fluke.rotation.z = sd * 0.5;
+    const fluke = new THREE.Mesh(new THREE.SphereGeometry(0.46, 14, 10), blue);
+    fluke.scale.set(1.25, 0.22, 0.6);
+    fluke.position.set(sd * 0.42, 0.16, 0);
+    fluke.rotation.z = sd * 0.55;
     tail.add(fluke);
-    inkOutline(fluke, 1.06);
+    inkOutline(fluke, 1.05);
   });
-  // eye + grin on the player side
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), toon(0xF5F3EC));
-  eye.position.set(0.9, 1.35, 0.82); g.add(eye);
-  const pup = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), toon(0x0A0A0C));
-  pup.position.set(0.92, 1.35, 0.9); g.add(pup);
-  const grin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.05), toon(0x0A0A0C));
-  grin.position.set(0.55, 1.02, 0.9); grin.rotation.z = 0.18; g.add(grin);
-  // spout
-  const spout = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 10), toon(0x9FDCFF));
-  spout.position.set(0.3, 2.25, 0); g.add(spout);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.4),
+  // side fins
+  [-1, 1].forEach(sd => {
+    const fin = new THREE.Mesh(new THREE.SphereGeometry(0.30, 12, 8), blue);
+    fin.scale.set(0.9, 0.22, 0.5);
+    fin.position.set(0.55, 0.72, sd * 0.78);
+    fin.rotation.z = -0.5;
+    g.add(fin);
+  });
+  /* angry face on the player side: tilted brow, eye, frown */
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), toon(0xF5F3EC));
+  eye.position.set(1.15, 1.42, 0.80); g.add(eye);
+  const pup = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), toon(0x0A0A0C));
+  pup.position.set(1.18, 1.40, 0.90); g.add(pup);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.06), toon(0x0A0A0C));
+  brow.position.set(1.15, 1.60, 0.84); brow.rotation.z = -0.45; g.add(brow);
+  const frown = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.06, 0.05), toon(0x0A0A0C));
+  frown.position.set(1.30, 1.02, 0.86); frown.rotation.z = -0.22; g.add(frown);
+  // spout splash
+  const spout = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.45, 10), pale);
+  spout.position.set(0.4, 2.3, 0); g.add(spout);
+  [-1, 0, 1].forEach(sd => {
+    const drop = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), pale);
+    drop.position.set(0.4 + sd * 0.22, 2.52 + Math.abs(sd) * -0.08, 0);
+    g.add(drop);
+  });
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 0.36),
     new THREE.MeshBasicMaterial({ map:labelTex('WHALE', '#1B3F7A', '#9FDCFF') }));
-  face.position.set(0, 1.9, 0.95); g.add(face);
+  face.position.set(-0.5, 1.75, 0.92); g.add(face);
   return g;
 }
 
@@ -1712,6 +1782,59 @@ function poseBull(dt) {
    ========================================================= */
 function syncWorld(dt) {
   const p = G.player;
+
+  /* The world-streaming half is fenced SEPARATELY from the camera: the
+     recurring "picture slid sideways" screenshots show a live HUD with a
+     stale camera, which is exactly what a fault repeating inside this
+     section produces — it must never be able to starve the camera update
+     or the present() call that follow it. */
+  try {
+    syncStream(dt);
+  } catch (e) {
+    if (!frameErrLogged) {
+      frameErrLogged = true;
+      console.error('world-stream error (game continues):', e);
+      errChip('Játékhiba elnyelve: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  /* chase cam: full follow, hard-clamped trail; high vantage so the road
+     ahead — not the character's back — owns the frame */
+  camRig.x = damp(camRig.x, p.x * S, 11, dt);
+  camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
+  // self-heal: NaN or any stranded state snaps back instead of losing the player
+  if (!isFinite(camRig.x) || Math.abs(camRig.x - p.x * S) > 0.9) camRig.x = p.x * S;
+  camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
+  camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 11, 3, dt);  // speed reads in the lens
+  if (G.shake > 0) {
+    camRig.shakeX = (Math.random() - .5) * G.shake * 0.30;
+    camRig.shakeY = (Math.random() - .5) * G.shake * 0.30;
+  } else { camRig.shakeX = camRig.shakeY = 0; }
+
+  camera.fov = camRig.fov * (aspectNarrow ? 1.24 : 1);
+  camera.position.set(camRig.x + camRig.shakeX, camRig.y + camRig.shakeY, 5.15);
+  camera.lookAt(camRig.x, 0.50 + p.y * S * 0.40, -9.5);
+  camera.updateProjectionMatrix();
+
+  const px0 = p.x * S;
+  key.position.set(px0 - 3.4, 7.0, 5.0);
+  key.target.position.set(px0, 0, -6);
+  bounce.position.set(px0, 0.6 + p.y * S, 1.0);
+  sun.position.x = camRig.x * 0.4;
+  sky.position.set(camera.position.x, 0, camera.position.z);
+
+  renderer.toneMappingExposure = 0.98 + G.flash * 0.9;
+  if (G.hitFlash > 0) {
+    hemi.color.setHex(0xFF4444);
+    hemi.intensity = 0.88 + G.hitFlash * 1.2;
+  } else {
+    hemi.color.setHex(0xC6D4FF);
+    hemi.intensity = 0.88;
+  }
+}
+
+function syncStream(dt) {
+  const p = G.player;
   const scroll = G.travelled * S;
 
   /* road streams TOWARD the camera — same +z direction as the world */
@@ -1761,40 +1884,6 @@ function syncWorld(dt) {
     q.m.position.z += q.vz * dt * 0.001 + G.speed * dt * S;
     q.vy -= dt * 0.006;
     q.m.scale.setScalar(clamp(q.life, 0, 1));
-  }
-
-  /* chase cam: full follow, hard-clamped trail; high vantage so the road
-     ahead — not the character's back — owns the frame */
-  camRig.x = damp(camRig.x, p.x * S, 11, dt);
-  camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
-  // self-heal: NaN or any stranded state snaps back instead of losing the player
-  if (!isFinite(camRig.x) || Math.abs(camRig.x - p.x * S) > 0.9) camRig.x = p.x * S;
-  camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
-  camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 7.5, 3, dt);
-  if (G.shake > 0) {
-    camRig.shakeX = (Math.random() - .5) * G.shake * 0.30;
-    camRig.shakeY = (Math.random() - .5) * G.shake * 0.30;
-  } else { camRig.shakeX = camRig.shakeY = 0; }
-
-  camera.fov = camRig.fov * (aspectNarrow ? 1.24 : 1);
-  camera.position.set(camRig.x + camRig.shakeX, camRig.y + camRig.shakeY, 5.15);
-  camera.lookAt(camRig.x, 0.50 + p.y * S * 0.40, -9.5);
-  camera.updateProjectionMatrix();
-
-  const px0 = p.x * S;
-  key.position.set(px0 - 3.4, 7.0, 5.0);
-  key.target.position.set(px0, 0, -6);
-  bounce.position.set(px0, 0.6 + p.y * S, 1.0);
-  sun.position.x = camRig.x * 0.4;
-  sky.position.set(camera.position.x, 0, camera.position.z);
-
-  renderer.toneMappingExposure = 0.98 + G.flash * 0.9;
-  if (G.hitFlash > 0) {
-    hemi.color.setHex(0xFF4444);
-    hemi.intensity = 0.88 + G.hitFlash * 1.2;
-  } else {
-    hemi.color.setHex(0xC6D4FF);
-    hemi.intensity = 0.88;
   }
 }
 
@@ -1847,6 +1936,7 @@ function loop(now) {
     if (!frameErrLogged) {
       frameErrLogged = true;
       console.error('frame error (game continues):', err);
+      errChip('Játékhiba elnyelve: ' + (err && err.message ? err.message : err));
     }
   }
 }
