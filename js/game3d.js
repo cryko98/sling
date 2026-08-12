@@ -1,16 +1,16 @@
 /* =========================================================
-   THE RETARDED BULL RUN — 3D
-   WebGL / Three.js. Chase camera behind a jointed low-poly bull.
+   THE RETARDED BULL RUN — 3D, asset edition
+   Character: Quaternius "Character Animated" (CC0), driven by an
+   AnimationMixer (Run / Roll / Death clips), with the meme bull head
+   mounted on the Head bone. Environment: Kenney + Quaternius CC0
+   buildings, Quaternius cargo wagon for the PAPER HANDS train.
 
-   Gameplay runs in the original "world units" so every balance figure
-   that was validated by simulation still holds; S converts those units
-   into metres for the 3D scene.
+   Gameplay runs in the original validated "world units"; S converts
+   them to metres, so every simulated balance figure still holds.
    ========================================================= */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-/* Bloom is what sells a neon night city — the emissive signs, coins, visor and
-   window lights all bleed light instead of sitting flat. Loaded separately and
-   guarded: if the addons fail to fetch, the game renders straight to screen. */
 let Composer = null, RenderPassC = null, BloomPass = null;
 try {
   ({ EffectComposer: Composer } = await import('three/addons/postprocessing/EffectComposer.js'));
@@ -30,7 +30,7 @@ const fmt = n => Math.floor(n).toLocaleString('en-US');
 const damp = (a, b, l, dt) => lerp(a, b, 1 - Math.exp(-l * dt / 1000));
 
 /* =========================================================
-   GAMEPLAY CONSTANTS (world units — validated, do not retune blindly)
+   GAMEPLAY CONSTANTS (validated by simulation — do not retune blindly)
    ========================================================= */
 const LANE_W = 245, ROAD_HALF = 440;
 const LANES = [-LANE_W, 0, LANE_W];
@@ -40,6 +40,7 @@ const GRAVITY = 0.00218, JUMP_V = 0.708;      // ~633ms airtime, ~109u apex
 const SLIDE_MS = 620, BULL_H = 230;
 const SPEED_START = 0.62, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000055;
 const ZONE_M = 800;
+const DEATH_MS = 780;
 
 const S = 1 / 110;                             // world units → metres
 
@@ -47,34 +48,28 @@ const S = 1 / 110;                             // world units → metres
    ZONES
    ========================================================= */
 const ZONES = [
-  { name:'NIGHT CITY',     skyTop:0x05060F, skyBot:0x2A2044, fog:0x141A38, sun:0xFFE500,
-    bldA:0x12D67C, bldB:0x1B3FE8, road:0x1B1B24, rim:0x3B6BFF },
-  { name:'BEAR MARKET',    skyTop:0x0A0406, skyBot:0x4A1418, fog:0x2A1014, sun:0xFF4A50,
-    bldA:0x8F1519, bldB:0x4A1020, road:0x211618, rim:0xE8232A },
-  { name:'LIQUIDITY POOL', skyTop:0x02080C, skyBot:0x0B4A5E, fog:0x08303E, sun:0x00C2FF,
-    bldA:0x00C2FF, bldB:0x12D67C, road:0x152026, rim:0x00C2FF },
-  { name:'RAINBOW RUN',    skyTop:0x0A0414, skyBot:0x5A1C7A, fog:0x2C1044, sun:0xB537F2,
-    bldA:0xB537F2, bldB:0xFF2D2D, road:0x1E1628, rim:0xB537F2 },
-  { name:'GOLDEN HOUR',    skyTop:0x140A02, skyBot:0x8A4E0A, fog:0x4A2A08, sun:0xFFC800,
-    bldA:0xFFC800, bldB:0xFF8A00, road:0x241C12, rim:0xFFC800 },
-  { name:'THE MOON',       skyTop:0x01020A, skyBot:0x141E5A, fog:0x0A1030, sun:0xF5F3EC,
-    bldA:0x4B4BFF, bldB:0xB537F2, road:0x171A2A, rim:0x8FA8FF }
+  { name:'NIGHT CITY',     skyTop:0x05060F, skyBot:0x2A2044, fog:0x141A38, sun:0xFFE500, rim:0x3B6BFF, road:0x1B1B24 },
+  { name:'BEAR MARKET',    skyTop:0x0A0406, skyBot:0x4A1418, fog:0x2A1014, sun:0xFF4A50, rim:0xE8232A, road:0x211618 },
+  { name:'LIQUIDITY POOL', skyTop:0x02080C, skyBot:0x0B4A5E, fog:0x08303E, sun:0x00C2FF, rim:0x00C2FF, road:0x152026 },
+  { name:'RAINBOW RUN',    skyTop:0x0A0414, skyBot:0x5A1C7A, fog:0x2C1044, sun:0xB537F2, rim:0xB537F2, road:0x1E1628 },
+  { name:'GOLDEN HOUR',    skyTop:0x140A02, skyBot:0x8A4E0A, fog:0x4A2A08, sun:0xFFC800, rim:0xFFC800, road:0x241C12 },
+  { name:'THE MOON',       skyTop:0x01020A, skyBot:0x141E5A, fog:0x0A1030, sun:0xF5F3EC, rim:0x8FA8FF, road:0x171A2A }
 ];
 const zone = () => ZONES[G.zone % ZONES.length];
 
 /* =========================================================
-   PERSISTENCE
+   PERSISTENCE / UPGRADES / MISSIONS  (unchanged, validated)
    ========================================================= */
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 const UPGRADES = [
-  { key:'magnet', name:'MAGNET COIL',   icon:'M', cls:'magnet', desc:'Longer coin magnet.',              max:5 },
-  { key:'visor',  name:'RAINBOW VISOR', icon:'V', cls:'visor',  desc:'Longer invincibility.',            max:5 },
-  { key:'x2',     name:'DENIAL ENGINE', icon:'2X', cls:'x2',     desc:'Longer 2x score window.',          max:5 },
+  { key:'magnet', name:'MAGNET COIL',   icon:'M',  cls:'magnet', desc:'Longer coin magnet.',                max:5 },
+  { key:'visor',  name:'RAINBOW VISOR', icon:'V',  cls:'visor',  desc:'Longer invincibility.',              max:5 },
+  { key:'x2',     name:'DENIAL ENGINE', icon:'2X', cls:'x2',     desc:'Longer 2x score window.',            max:5 },
   { key:'head',   name:'HEAD START',    icon:'GO', cls:'head',   desc:'Begin each run already invincible.', max:4 },
-  { key:'life',   name:'SECOND WIND',   icon:'+1', cls:'life',   desc:'Extra revive after a crash.',      max:3 }
+  { key:'life',   name:'SECOND WIND',   icon:'+1', cls:'life',   desc:'Extra revive after a crash.',        max:3 }
 ];
 const UP_COST = [200, 400, 700, 1100, 1600];
 const save = {
@@ -92,9 +87,6 @@ const durMagnet = () => 8500 + upLvl('magnet') * 1600;
 const durVisor  = () => 6500 + upLvl('visor')  * 1300;
 const durX2     = () => 9000 + upLvl('x2')     * 1600;
 
-/* =========================================================
-   MISSIONS
-   ========================================================= */
 const M_DEFS = [
   { t:'coins',    text:n => `Collect ${n} $SLING in one run`, pick:() => 40 + Math.floor(Math.random()*4)*20, pay:n => n*3 },
   { t:'dist',     text:n => `Run ${n}m in one run`,           pick:() => 600 + Math.floor(Math.random()*5)*200, pay:n => Math.round(n*0.4) },
@@ -103,9 +95,6 @@ const M_DEFS = [
   { t:'combo',    text:n => `Reach a x${n} combo`,            pick:() => 3 + Math.floor(Math.random()*3), pay:n => n*60 },
   { t:'jumps',    text:n => `Jump ${n} times`,                pick:() => 20 + Math.floor(Math.random()*4)*10, pay:n => n*5 }
 ];
-/* `avoid` keeps the three active missions on distinct objectives — rolling
-   "Jump 30 times / Jump 40 times / Jump 40 times" is a 1-in-36 accident that
-   looks like a bug and gives the player nothing to vary their play for. */
 function newMission(avoid = []) {
   const pool = M_DEFS.filter(d => !avoid.includes(d.t));
   const defs = pool.length ? pool : M_DEFS;
@@ -128,17 +117,17 @@ if (!Array.isArray(save.missions) || save.missions.length !== 3 ||
    STATE
    ========================================================= */
 const G = {
-  state:'idle', t:0, last:0, raf:null,
+  state:'idle',                 // idle | playing | dying | paused | over
+  t:0, last:0, raf:null,
   speed:SPEED_START, dist:0, score:0, coins:0, mult:1,
   zone:0, nextZoneM:ZONE_M,
   streak:0, combo:1, lastCoinT:-1e9,
   nearMiss:0, jumps:0, powers:0, revives:0,
-  shake:0, flash:0, hitFlash:0, landT:0,
+  shake:0, flash:0, hitFlash:0, landT:0, deathT:0,
   travelled:0, spawnZ:900, lastGate:false,
   obstacles:[], pickups:[],
-  player:{ lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0, phase:0,
+  player:{ lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0,
            nudge:0, inv:0, magnet:0, x2:0 },
-  // animation blend weights
   wJump:0, wSlide:0
 };
 
@@ -171,7 +160,7 @@ const sfx = {
 };
 
 /* =========================================================
-   RENDERER / SCENE
+   RENDERER / SCENE / LIGHTS
    ========================================================= */
 const renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true, powerPreference:'high-performance' });
 renderer.setClearColor(0x05060F, 1);
@@ -182,63 +171,26 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-/* Fog has to reach past the drawn road (~24m) or the skyline is swallowed
-   whole and the buildings collapse into flat silhouettes. */
 scene.fog = new THREE.Fog(0x141A38, 16, 72);
 
 const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 220);
 const camRig = { x:0, y:0, shakeX:0, shakeY:0, fov:56 };
 
-/* post chain */
 let composer = null, bloom = null;
 if (Composer && RenderPassC && BloomPass) {
   composer = new Composer(renderer);
   composer.addPass(new RenderPassC(scene, camera));
-  /* Threshold matters more than strength: at a low threshold everything blooms
-     and the character washes out into a glowing blob. 0.62 keeps the effect on
-     genuine light sources — lamps, windows, coins, signs — and off the bull. */
   bloom = new BloomPass(new THREE.Vector2(1, 1), 0.55, 0.62, 0.62);
   composer.addPass(bloom);
 }
 const present = () => composer ? composer.render() : renderer.render(scene, camera);
 
-/* =========================================================
-   TOON PIPELINE
-   The source material is a flat-colour meme with heavy black
-   linework. Chasing smooth PBR shading on primitive solids is what
-   made the character read as programmer art; quantised toon bands
-   plus inverted-hull ink outlines make the same geometry read as a
-   deliberate comic style — the way stylised runners actually ship.
-   ========================================================= */
-const gradientMap = new THREE.DataTexture(new Uint8Array([95, 160, 255]), 3, 1, THREE.RedFormat);
-gradientMap.minFilter = gradientMap.magFilter = THREE.NearestFilter;
-gradientMap.needsUpdate = true;
-
-const toon = (color, opts = {}) =>
-  new THREE.MeshToonMaterial({ color, gradientMap, ...opts });
-
-const INK = new THREE.MeshBasicMaterial({ color: 0x0A0A0C, side: THREE.BackSide });
-/* Inverted hull: a back-face copy of the mesh, slightly inflated. Cheap,
-   pool-friendly, and the exact digital equivalent of the meme's ink line.
-   Attached as a child so it inherits every joint rotation for free. */
-function inkOutline(mesh, grow = 1.05) {
-  const hull = new THREE.Mesh(mesh.geometry, INK);
-  hull.scale.setScalar(grow);
-  hull.userData.isOutline = true;
-  hull.castShadow = false;
-  mesh.add(hull);
-  return hull;
-}
-
-/* ---------- lights ---------- */
-/* Neutral key — a warm key at high intensity turned the bone-white hide pink. */
 const hemi = new THREE.HemisphereLight(0xC6D4FF, 0x1A1A26, 0.88);
 scene.add(hemi);
 const key = new THREE.DirectionalLight(0xFFFBF0, 1.45);
 key.position.set(-3.4, 7.0, 5.0);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
-// tight ortho frustum around the play area keeps 1024px of shadow map sharp
 key.shadow.camera.left = -7; key.shadow.camera.right = 7;
 key.shadow.camera.top = 9;   key.shadow.camera.bottom = -9;
 key.shadow.camera.near = 0.5; key.shadow.camera.far = 34;
@@ -249,9 +201,8 @@ scene.add(key.target);
 const fill = new THREE.DirectionalLight(0xCFDCFF, 0.50);
 fill.position.set(4.0, 3.0, 5.5);
 scene.add(fill);
-/* Rim sits LOW: with a high blue rim the warm key + blue rim mixed to pink on
-   the road's white lane dashes. Near-horizontal, it silhouettes the bull's
-   edges but barely grazes the upward-facing asphalt. */
+/* rim near horizontal: a high blue rim mixed with the warm key tints the
+   road's white dashes pink */
 const rim = new THREE.DirectionalLight(0x3B6BFF, 1.15);
 rim.position.set(2.8, 0.5, -6);
 scene.add(rim);
@@ -260,7 +211,42 @@ bounce.position.set(0, 0.5, 1.2);
 scene.add(bounce);
 
 /* =========================================================
-   TEXTURE HELPERS
+   TOON PIPELINE — flat colour + ink, like the source meme
+   ========================================================= */
+const gradientMap = new THREE.DataTexture(new Uint8Array([95, 160, 255]), 3, 1, THREE.RedFormat);
+gradientMap.minFilter = gradientMap.magFilter = THREE.NearestFilter;
+gradientMap.needsUpdate = true;
+const toon = (color, opts = {}) => new THREE.MeshToonMaterial({ color, gradientMap, ...opts });
+const INK = new THREE.MeshBasicMaterial({ color: 0x0A0A0C, side: THREE.BackSide });
+/* Inverted hull outline for RIGID meshes (a scaled hull cannot follow bones,
+   so the skinned body relies on the rim light instead). */
+function inkOutline(mesh, grow = 1.05) {
+  const hull = new THREE.Mesh(mesh.geometry, INK);
+  hull.scale.setScalar(grow);
+  hull.userData.isOutline = true;
+  hull.castShadow = false;
+  mesh.add(hull);
+  return hull;
+}
+/* Swap a loaded model's materials to the shared toon look. */
+function toToon(root, tint) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const olds = Array.isArray(o.material) ? o.material : [o.material];
+    const news = olds.map(m => {
+      const t = new THREE.MeshToonMaterial({
+        color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+        map: m.map || null, gradientMap
+      });
+      if (tint) t.color.lerp(new THREE.Color(tint.color), tint.k);
+      return t;
+    });
+    o.material = Array.isArray(o.material) ? news : news[0];
+  });
+}
+
+/* =========================================================
+   CANVAS TEXTURE HELPERS
    ========================================================= */
 function cvsTex(w, h, paint, repX = 1, repY = 1) {
   const c = document.createElement('canvas');
@@ -285,7 +271,9 @@ function labelTex(text, bg, fg, w = 256, h = 128) {
   });
 }
 
-/* ---------- sky dome ---------- */
+/* =========================================================
+   SKY / STARS / SUN
+   ========================================================= */
 const skyTex = cvsTex(8, 256, (g, w, h) => {
   const grd = g.createLinearGradient(0, 0, 0, h);
   grd.addColorStop(0, '#05060F'); grd.addColorStop(1, '#2A2044');
@@ -305,8 +293,6 @@ function paintSky() {
   c.fillStyle = grd; c.fillRect(0, 0, 8, 256);
   skyTex.needsUpdate = true;
 }
-
-/* ---------- stars ---------- */
 {
   const N = 420, pos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
@@ -323,15 +309,12 @@ function paintSky() {
     color:0xffffff, size:0.42, sizeAttenuation:true, transparent:true, opacity:0.75, fog:false
   })));
 }
-
-/* ---------- sun glow ---------- */
 const sunTex = cvsTex(128, 128, (g, w, h) => {
   const r = g.createRadialGradient(w/2, h/2, 2, w/2, h/2, w/2);
   r.addColorStop(0, 'rgba(255,255,255,1)');
   r.addColorStop(0.25, 'rgba(255,229,0,.55)');
   r.addColorStop(1, 'rgba(255,229,0,0)');
   g.fillStyle = r; g.fillRect(0, 0, w, h);
-  // synthwave slices across the lower half
   g.globalCompositeOperation = 'destination-out';
   for (let y = 66; y < h; y += 13) g.fillRect(0, y, w, 3 + (y - 60) * 0.06);
 });
@@ -343,29 +326,25 @@ sun.position.set(0, 5.5, -84);
 scene.add(sun);
 
 /* =========================================================
-   ROAD
+   ROAD / RAILS / KERBS / LAMPS
    ========================================================= */
-const ROAD_W = ROAD_HALF * 2 * S;              // 8 m
+const ROAD_W = ROAD_HALF * 2 * S;
 const ROAD_LEN = 64;
-const TILE = 2;                                 // metres per texture tile
+const TILE = 2;
 
 const roadTex = cvsTex(512, 512, (g, w, h) => {
   g.fillStyle = '#33343F'; g.fillRect(0, 0, w, h);
-  // subtle asphalt speckle
   for (let i = 0; i < 1400; i++) {
     g.fillStyle = `rgba(255,255,255,${Math.random()*0.05})`;
     g.fillRect(Math.random()*w, Math.random()*h, 2, 2);
   }
-  // lane dividers at ±LANE_W/2 of the road width
   const lx = (LANE_W / 2) / (ROAD_HALF * 2);
   [0.5 - lx, 0.5 + lx].forEach(fx => {
     g.fillStyle = 'rgba(245,243,236,.80)';
     for (let y = 0; y < h; y += 128) g.fillRect(fx * w - 5, y, 10, 76);
   });
-  // outer edge lines
   g.fillStyle = 'rgba(245,243,236,.30)';
   g.fillRect(6, 0, 5, h); g.fillRect(w - 11, 0, 5, h);
-  // yellow speed rung
   g.fillStyle = 'rgba(255,229,0,.22)';
   g.fillRect(0, h - 12, w, 9);
 }, 1, ROAD_LEN / TILE);
@@ -379,7 +358,6 @@ road.position.set(0, 0, -ROAD_LEN / 2 + 12);
 road.receiveShadow = true;
 scene.add(road);
 
-/* ground either side */
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(190, 190),
   new THREE.MeshStandardMaterial({ color:0x0C0D16, roughness:1 })
@@ -388,11 +366,11 @@ ground.rotation.x = -Math.PI / 2;
 ground.position.set(0, -0.03, -40);
 scene.add(ground);
 
-/* kerbs — physically streaming segments instead of a scrolled texture.
-   A moving mesh cannot get its direction wrong the way a UV offset can. */
+/* kerbs — physically streaming segments; a moving mesh cannot get its
+   direction wrong the way a UV offset can */
 const kerbYellow = toon(0xFFD500);
 const kerbBlack  = toon(0x111116);
-const KERB_LEN = 3.4, KERB_N = 18;             // per side, spans ~61m
+const KERB_LEN = 3.4, KERB_N = 18;
 const kerbGeo = new THREE.BoxGeometry(0.26, 0.30, KERB_LEN);
 const kerbs = [];
 for (let i = 0; i < KERB_N * 2; i++) {
@@ -404,7 +382,7 @@ for (let i = 0; i < KERB_N * 2; i++) {
   kerbs.push(m);
 }
 
-/* neon edge rails hugging the road — pure bloom fuel */
+/* neon edge rails — bloom fuel */
 const railMat = new THREE.MeshBasicMaterial({ color: 0xFFE500 });
 [-1, 1].forEach(sd => {
   const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, ROAD_LEN), railMat);
@@ -412,14 +390,10 @@ const railMat = new THREE.MeshBasicMaterial({ color: 0xFFE500 });
   scene.add(rail);
 });
 
-/* =========================================================
-   ROADSIDE LAMPS
-   Regularly spaced lights streaming past are the strongest speed cue in a
-   runner — far stronger than the road texture alone.
-   ========================================================= */
+/* roadside lamps */
 const lampGlowMat = new THREE.MeshBasicMaterial({ color:0xFFE9A0 });
 const lampPostMat = new THREE.MeshStandardMaterial({ color:0x22242E, roughness:0.6, metalness:0.4 });
-const LAMP_GAP = 9;                      // metres between lamps
+const LAMP_GAP = 9;
 const lamps = [];
 for (let i = 0; i < 22; i++) {
   const side = i % 2 ? 1 : -1;
@@ -431,326 +405,353 @@ for (let i = 0; i < 22; i++) {
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.24), lampGlowMat);
   head.position.set(-side * 0.62, 3.08, 0); g.add(head);
   g.position.set(side * (ROAD_HALF * S + 0.75), 0, -Math.floor(i / 2) * LAMP_GAP);
-  g.traverse(o => { if (o.isMesh) o.castShadow = false; });
   scene.add(g);
   lamps.push(g);
 }
 
 /* =========================================================
-   BUILDINGS (recycled pool → real 3D parallax)
+   ASSET LOADING
    ========================================================= */
-const bldMatA = new THREE.MeshStandardMaterial({ color:0x12D67C, roughness:0.7, emissive:0x061a10, emissiveIntensity:1 });
-const bldMatB = new THREE.MeshStandardMaterial({ color:0x1B3FE8, roughness:0.7, emissive:0x050a20, emissiveIntensity:1 });
-const winTex = cvsTex(64, 128, (g, w, h) => {
-  g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, w, h);
-  for (let y = 8; y < h - 8; y += 16)
-    for (let x = 8; x < w - 8; x += 18) {
-      g.fillStyle = Math.random() > .35 ? 'rgba(255,229,0,.55)' : 'rgba(255,229,0,.10)';
-      g.fillRect(x, y, 9, 8);
-    }
-}, 2, 6);
-const buildings = [];
-for (let i = 0; i < 54; i++) {
-  const grp = new THREE.Group();
-  const h = 5 + Math.random() * 15;
-  const w = 3.0 + Math.random() * 3.4, d = 3.0 + Math.random() * 3.4;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), Math.random() > .5 ? bldMatA : bldMatB);
-  body.position.y = h / 2;
-  grp.add(body);
-  const glow = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, h, d + 0.02),
-    new THREE.MeshBasicMaterial({ map:winTex, transparent:true, opacity:0.85, fog:true }));
-  glow.position.y = h / 2;
-  grp.add(glow);
-  grp.userData = { h };
-  // kept well back from the kerb so the road reads as open, not a canyon
-  const side = i % 2 ? 1 : -1;
-  grp.position.set(side * (13 + Math.random() * 26), 0, -Math.random() * 150);
-  scene.add(grp);
-  buildings.push(grp);
+const loader = new GLTFLoader();
+const loadGlb = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+
+const ASSET_FILES = {
+  character: 'assets/game/character.glb',
+  wagon:     'assets/game/train_wagon.glb',
+  bld1: 'assets/game/skyscraper_a.glb',
+  bld2: 'assets/game/skyscraper_b.glb',
+  bld3: 'assets/game/building_large_a.glb',
+  bld4: 'assets/game/building_large_b.glb',
+  bld5: 'assets/game/building_big_q.glb',
+  bld6: 'assets/game/building_low.glb',
+  bld7: 'assets/game/building_small_q.glb'
+};
+const ASSETS = {};
+let assetsReady = false;
+
+/* character rig handles, filled by setupCharacter() */
+const bull = new THREE.Group();               // world wrapper: position/bank/squash
+scene.add(bull);
+let mixer = null;
+const actions = {};                            // Idle / Run / Roll / Death
+let currentAction = null;
+const bones = {};                              // Head / UpperLeg.L ...
+const BONE_NAMES = ['Head','UpperLegL','UpperLegR','LowerLegL','LowerLegR',
+                    'UpperArmL','UpperArmR','LowerArmL','LowerArmR','Hips'];
+
+function findClip(gltf, name) {
+  return gltf.animations.find(a => a.name === name || a.name.endsWith('|' + name));
+}
+function playAction(name, fade = 0.14, opts = {}) {
+  const next = actions[name];
+  if (!next || currentAction === next) return next;
+  next.reset();
+  if (opts.once) { next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true; }
+  else next.setLoop(THREE.LoopRepeat, Infinity);
+  if (opts.timeScale) next.timeScale = opts.timeScale;
+  next.fadeIn(fade).play();
+  if (currentAction) currentAction.fadeOut(fade);
+  currentAction = next;
+  return next;
 }
 
-/* =========================================================
-   THE BULL — jointed hierarchy so the run cycle is real
-   ========================================================= */
-const MAT = {
-  skin:   toon(0xF0ECDF),
-  skinD:  toon(0xD4CEBE),
-  horn:   toon(0xFBF8EE),
-  ink:    toon(0x15151A),
-  yellow: toon(0xFFDF00),
-  navy:   toon(0x1D2660),
-  blue:   toon(0x1B3FE8, { emissive:0x0A1650, emissiveIntensity:0.8 }),
-  red:    toon(0xE8232A),
-  hoof:   toon(0x191920)
-};
+/* ---------- the meme head, mounted on the Head bone ---------- */
 const visorTex = cvsTex(128, 32, (g, w, h) => {
   const cols = ['#FF2D2D','#FF8A00','#FFE500','#39D353','#00C2FF','#4B4BFF','#B537F2'];
   cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * w / cols.length, 0, w / cols.length + 1, h); });
   g.fillStyle = 'rgba(255,255,255,.28)'; g.fillRect(0, 0, w, h * 0.34);
 });
-MAT.visor = new THREE.MeshToonMaterial({ map:visorTex, gradientMap,
-  emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.22 });
 const beanieTex = cvsTex(128, 64, (g, w, h) => {
   g.fillStyle = '#121216'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#FFC800';
   for (let i = 0; i < 10; i++) g.fillRect(i * w / 10 + 3, 0, w / 22, h * 0.66);
 });
-MAT.beanie = new THREE.MeshToonMaterial({ map:beanieTex, gradientMap });
-
-/* The face is PAINTED, not modelled. The meme is flat vector art; a texture
-   plate carries its exact bellowing mouth, fangs, tongue and war paint far
-   better than a pile of tiny boxes ever did — and drops seven meshes. */
 const faceTex = cvsTex(256, 256, (g, w, h) => {
   g.clearRect(0, 0, w, h);
   const rr = (x, y, ww, hh, r) => { g.beginPath(); g.moveTo(x + r, y);
     g.arcTo(x + ww, y, x + ww, y + hh, r); g.arcTo(x + ww, y + hh, x, y + hh, r);
     g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + ww, y, r); g.closePath(); };
-  // red war paint on the cheek
   g.strokeStyle = '#E8232A'; g.lineCap = 'round'; g.lineWidth = 11;
   g.beginPath(); g.moveTo(48, 70); g.lineTo(62, 118); g.stroke();
   g.beginPath(); g.moveTo(76, 74); g.lineTo(86, 112); g.stroke();
-  // snout patch + nostrils
   g.fillStyle = '#26262E'; rr(70, 74, 116, 46, 20); g.fill();
   g.strokeStyle = '#0A0A0C'; g.lineWidth = 7; rr(70, 74, 116, 46, 20); g.stroke();
   g.fillStyle = '#06060A';
   g.beginPath(); g.ellipse(104, 98, 9, 13, 0.3, 0, 7); g.fill();
   g.beginPath(); g.ellipse(152, 98, 9, 13, -0.3, 0, 7); g.fill();
-  // bellowing mouth
   g.fillStyle = '#20070D'; rr(52, 134, 152, 92, 38); g.fill();
   g.strokeStyle = '#0A0A0C'; g.lineWidth = 9; rr(52, 134, 152, 92, 38); g.stroke();
-  // top teeth with gaps
   g.fillStyle = '#FFFDF4'; rr(62, 138, 132, 26, 9); g.fill();
   g.strokeStyle = 'rgba(10,10,12,.5)'; g.lineWidth = 3;
   for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(62 + i * 26.4, 140); g.lineTo(62 + i * 26.4, 164); g.stroke(); }
-  // fangs
+  g.fillStyle = '#FFFDF4';
   g.beginPath(); g.moveTo(66, 160); g.lineTo(92, 160); g.lineTo(79, 198); g.closePath(); g.fill();
   g.beginPath(); g.moveTo(164, 160); g.lineTo(190, 160); g.lineTo(177, 198); g.closePath(); g.fill();
-  // tongue
   g.fillStyle = '#E5424E';
   g.beginPath(); g.ellipse(128, 216, 40, 26, 0, Math.PI, Math.PI * 2, false); g.closePath(); g.fill();
   g.strokeStyle = '#AE2130'; g.lineWidth = 4;
   g.beginPath(); g.moveTo(128, 196); g.lineTo(128, 224); g.stroke();
 });
+const MAT = {
+  skin: toon(0xF0ECDF), horn: toon(0xFBF8EE), ink: toon(0x15151A),
+  blue: toon(0x1B3FE8, { emissive:0x0A1650, emissiveIntensity:0.8 })
+};
+MAT.visor = new THREE.MeshToonMaterial({ map:visorTex, gradientMap,
+  emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.22 });
+MAT.beanie = new THREE.MeshToonMaterial({ map:beanieTex, gradientMap });
 
-const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-const cap = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 6, 12), m);
-const sph = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), m);
-const cyl = (rt, rb, h, m, seg = 14) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m);
+function buildBullHead() {
+  const head = new THREE.Group();
+  const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  const sph = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), m);
+  const cyl = (rt, rb, ht, m, seg = 10) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, ht, seg), m);
 
-const bull = new THREE.Group();
-scene.add(bull);
-
-/* Short and stacked: legs cut down, torso widened — a gym bull, not a
-   basketball player. Pelvis height = leg reach so the hooves meet the road. */
-const pelvis = new THREE.Group();
-pelvis.position.y = 0.87;
-bull.add(pelvis);
-
-/* --- torso --- */
-const torso = new THREE.Group();
-pelvis.add(torso);
-{
-  const hips  = box(0.52, 0.26, 0.38, MAT.navy);  hips.position.y = 0.02;  torso.add(hips);
-  const belt  = box(0.54, 0.06, 0.40, MAT.yellow); belt.position.y = 0.14; torso.add(belt);
-  const abs   = box(0.50, 0.26, 0.36, MAT.skin);  abs.position.y = 0.28;   torso.add(abs);
-  const chest = box(0.72, 0.36, 0.44, MAT.skin);  chest.position.y = 0.54; torso.add(chest);
-  // tank top: narrower than the shoulders so the torso tapers to the waist
-  const tank  = box(0.64, 0.50, 0.46, MAT.yellow); tank.position.y = 0.42; torso.add(tank);
-  const strapL = box(0.09, 0.20, 0.11, MAT.yellow); strapL.position.set(-0.22, 0.72, -0.14); torso.add(strapL);
-  const strapR = strapL.clone(); strapR.position.x = 0.22; torso.add(strapR);
-  // traps + neck
-  const traps = box(0.46, 0.16, 0.34, MAT.skin); traps.position.y = 0.74; torso.add(traps);
-  const neck  = cyl(0.13, 0.15, 0.16, MAT.skin); neck.position.y = 0.84;  torso.add(neck);
-}
-
-/* --- head --- */
-const head = new THREE.Group();
-head.position.y = 0.97;
-head.scale.setScalar(1.16);          // the head carries the identity — let it read
-torso.add(head);
-{
   const skull = box(0.50, 0.44, 0.46, MAT.skin); skull.position.y = 0.08; head.add(skull);
-  // painted face plate — mouth, fangs, tongue, nostrils, war paint in one texture
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.42),
     new THREE.MeshToonMaterial({ map:faceTex, gradientMap, transparent:true }));
   plate.position.set(0, -0.04, -0.236);
   plate.rotation.y = Math.PI;
   plate.userData.noOutline = true;
   head.add(plate);
-  // rainbow visor wrapping the skull
+  // visor + beanie
   const visor = box(0.54, 0.11, 0.50, MAT.visor); visor.position.set(0, 0.13, -0.02); head.add(visor);
-  // beanie
-  const beanie = box(0.53, 0.22, 0.49, MAT.beanie); beanie.position.set(0, 0.30, 0); head.add(beanie);
+  const crown = box(0.53, 0.22, 0.49, MAT.beanie); crown.position.set(0, 0.30, 0); head.add(crown);
   const brim = box(0.56, 0.07, 0.52, MAT.ink); brim.position.set(0, 0.20, 0); head.add(brim);
-  /* Horns are the silhouette signature — they have to clear the beanie and
-     read against the sky, so they sweep wide in two tapered segments. */
+  // horns / ears / earrings
   [-1, 1].forEach(sd => {
     const hornRoot = new THREE.Group();
     hornRoot.position.set(sd * 0.24, 0.26, 0.02);
     hornRoot.rotation.z = sd * -0.80;
     hornRoot.rotation.x = -0.20;
     head.add(hornRoot);
-    const seg1 = cyl(0.068, 0.10, 0.30, MAT.horn, 10);
-    seg1.position.y = 0.15; hornRoot.add(seg1);
-    const seg2 = cyl(0.014, 0.068, 0.28, MAT.horn, 10);
+    const seg1 = cyl(0.068, 0.10, 0.30, MAT.horn); seg1.position.y = 0.15; hornRoot.add(seg1);
+    const seg2 = cyl(0.014, 0.068, 0.28, MAT.horn);
     seg2.position.set(0, 0.42, 0); seg2.rotation.z = sd * -0.42; hornRoot.add(seg2);
-    // ears tuck under the horns
     const ear = box(0.15, 0.065, 0.11, MAT.skin);
     ear.position.set(sd * 0.28, 0.02, 0.05); ear.rotation.z = sd * 0.40; head.add(ear);
-    // blue teardrop earring
     const er = sph(0.056, MAT.blue); er.position.set(sd * 0.30, -0.12, 0.06);
-    er.scale.set(1, 1.4, 1);              // teardrop, like the logo
+    er.scale.set(1, 1.4, 1);
     head.add(er);
   });
-}
-
-/* --- limbs --- */
-function makeArm(sd) {
-  const shoulder = new THREE.Group();
-  shoulder.position.set(sd * 0.38, 0.70, 0);          // wide, gym-built shoulders
-  torso.add(shoulder);
-  const delt = sph(0.125, MAT.skin); shoulder.add(delt);
-  const upper = cap(0.115, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
-  upper.position.y = -0.17; shoulder.add(upper);
-  const elbow = new THREE.Group();
-  elbow.position.y = -0.31;
-  shoulder.add(elbow);
-  const fore = cap(0.098, 0.19, sd < 0 ? MAT.skinD : MAT.skin);
-  fore.position.y = -0.14; elbow.add(fore);
-  const wrist = box(0.11, 0.06, 0.12, MAT.yellow);   // wristband reads the motion
-  wrist.position.y = -0.24; elbow.add(wrist);
-  const fist = sph(0.12, sd < 0 ? MAT.skinD : MAT.skin);
-  fist.position.y = -0.30; elbow.add(fist);
-  return { shoulder, elbow };
-}
-function makeLeg(sd) {
-  const hip = new THREE.Group();
-  hip.position.set(sd * 0.20, -0.06, 0);              // wider stance
-  pelvis.add(hip);
-  const thigh = cap(0.145, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
-  thigh.position.y = -0.18; hip.add(thigh);
-  const short = box(0.32, 0.24, 0.34, sd < 0 ? MAT.navy : MAT.navy);
-  short.position.y = -0.06; hip.add(short);
-  const knee = new THREE.Group();
-  knee.position.y = -0.36;
-  hip.add(knee);
-  const shin = cap(0.115, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
-  shin.position.y = -0.17; knee.add(shin);
-  const ankle = new THREE.Group();
-  ankle.position.y = -0.34;
-  knee.add(ankle);
-  const hoof = box(0.21, 0.12, 0.32, MAT.hoof);
-  hoof.position.set(0, -0.05, -0.05); ankle.add(hoof);
-  return { hip, knee, ankle };
-}
-const armL = makeArm(-1), armR = makeArm(1);
-const legL = makeLeg(-1), legR = makeLeg(1);
-
-/* ink + shadows: outline every opaque part, then let it cast.
-   Collected first — inkOutline() mutates children mid-walk otherwise. */
-{
+  // ink + shadows on the rigid head unit
   const meshes = [];
-  bull.traverse(o => { if (o.isMesh) meshes.push(o); });
+  head.traverse(o => { if (o.isMesh) meshes.push(o); });
   for (const m of meshes) {
     if (m.userData.isOutline || m.userData.noOutline || m.material.transparent) continue;
     m.castShadow = true;
     inkOutline(m, m.geometry.type === 'BoxGeometry' ? 1.045 : 1.06);
   }
+  return head;
 }
 
-/* --- tail --- */
-const tailRoot = new THREE.Group();
-tailRoot.position.set(0, 0.02, 0.22);
-pelvis.add(tailRoot);
-{
-  // angled back and kept high, or it dangles between the legs from behind
-  const t1 = cap(0.032, 0.20, MAT.skinD); t1.position.set(0, -0.02, 0.13);
-  t1.rotation.x = -1.05; tailRoot.add(t1);
-  const tuft = sph(0.055, MAT.ink); tuft.position.set(0, -0.08, 0.26); tailRoot.add(tuft);
+function setupCharacter(gltf) {
+  const model = gltf.scene;
+
+  /* normalise: measure, then scale to a short, stocky build */
+  const bbox = new THREE.Box3().setFromObject(model);
+  const rawH = bbox.max.y - bbox.min.y;
+  const s = 1.85 / rawH;                        // target height before widening
+  const rig = new THREE.Group();
+  rig.add(model);
+  rig.scale.set(s * 1.22, s * 0.88, s * 1.22);  // wider + shorter = gym bull
+  model.position.y = -bbox.min.y;
+  bull.add(rig);
+
+  /* $SLING palette by material name; hide the human hair/eyes — the bull
+     head encases the whole human head like a mascot suit */
+  const TINT = {
+    Skin:'#F0ECDF', Shirt:'#FFDF00', UnderShirt:'#FFDF00',
+    Pants:'#1D2660', Boots:'#191920', Body:'#F0ECDF'
+  };
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.frustumCulled = false;                    // skinned mesh + offset bones
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const swapped = mats.map(m => {
+      const hex = TINT[m.name];
+      return new THREE.MeshToonMaterial({
+        color: hex ? new THREE.Color(hex) : (m.color ? m.color.clone() : new THREE.Color(0xF0ECDF)),
+        gradientMap
+      });
+    });
+    o.material = Array.isArray(o.material) ? swapped : swapped[0];
+    if (/Hair|Eye|Pupil/i.test(o.name)) o.visible = false;
+  });
+
+  for (const n of BONE_NAMES) bones[n] = model.getObjectByName(n) || null;
+
+  /* mount the meme head on the Head bone, sized in world terms */
+  if (bones.Head) {
+    const headUnit = buildBullHead();
+    /* shrink the human head FIRST, then measure: the unit is a child of this
+       bone, so its compensation scale must include the shrink too */
+    bones.Head.scale.setScalar(0.55);
+    bones.Head.updateWorldMatrix(true, false);
+    const scl = new THREE.Vector3();
+    bones.Head.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scl);
+    const inv = 1 / (scl.y || 1);
+    headUnit.scale.setScalar(inv * 0.85);       // the meme head is HUGE
+    headUnit.position.set(0, 0.12 * inv, 0.02 * inv);
+    bones.Head.add(headUnit);
+  }
+
+  /* animations */
+  mixer = new THREE.AnimationMixer(model);
+  for (const name of ['Idle', 'Walk', 'Run', 'Roll', 'Death']) {
+    const clip = findClip(gltf, name);
+    if (clip) actions[name] = mixer.clipAction(clip);
+  }
+  playAction('Idle', 0);
 }
 
-/* --- blob shadow --- */
-const shadowTex = cvsTex(64, 64, (g, w, h) => {
-  const r = g.createRadialGradient(w/2, h/2, 1, w/2, h/2, w/2);
-  r.addColorStop(0, 'rgba(0,0,0,.72)'); r.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = r; g.fillRect(0, 0, w, h);
-});
-const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0),
-  new THREE.MeshBasicMaterial({ map:shadowTex, transparent:true, depthWrite:false }));
-blob.rotation.x = -Math.PI / 2;
-blob.position.y = 0.012;
-scene.add(blob);
-
-/* --- invincibility aura --- */
-const aura = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 14),
-  new THREE.MeshBasicMaterial({ color:0xFFE500, transparent:true, opacity:0.0, wireframe:true }));
-scene.add(aura);
+/* jump has no clip — pose the bones directly on top of the mixer output */
+function applyJumpPose(w) {
+  if (!bones.UpperLegL) return;
+  const add = (b, x) => { if (bones[b]) bones[b].rotation.x += x * w; };
+  add('UpperLegL', -0.95); add('LowerLegL', 1.15);
+  add('UpperLegR', -0.40); add('LowerLegR', 0.85);
+  add('UpperArmL', -1.30); add('UpperArmR', -1.30);
+  add('LowerArmL', -0.40); add('LowerArmR', -0.40);
+}
 
 /* =========================================================
-   OBSTACLE + PICKUP POOLS
+   BUILDINGS — professional CC0 models, streamed + recycled
+   ========================================================= */
+const buildings = [];
+function setupBuildings() {
+  const keys = ['bld1','bld2','bld3','bld4','bld5','bld6','bld7'];
+  const templates = keys.map(k => {
+    const t = ASSETS[k].scene;
+    toToon(t, { color: 0x10121F, k: 0.34 });    // pull toward night palette
+    const bb = new THREE.Box3().setFromObject(t);
+    return { obj: t, h: bb.max.y - bb.min.y, w: bb.max.x - bb.min.x, minY: bb.min.y };
+  });
+  for (let i = 0; i < 40; i++) {
+    const tpl = templates[Math.floor(Math.random() * templates.length)];
+    const inst = tpl.obj.clone();
+    const targetH = 7 + Math.random() * 20;
+    const s = targetH / tpl.h;
+    inst.scale.setScalar(s);
+    inst.position.y = -tpl.minY * s;
+    const grp = new THREE.Group();
+    grp.add(inst);
+    const side = i % 2 ? 1 : -1;
+    const halfW = (tpl.w * s) / 2;
+    grp.userData.halfW = halfW;
+    grp.position.set(side * (6.8 + halfW + Math.random() * 14), 0, -Math.random() * 150);
+    grp.rotation.y = Math.floor(Math.random() * 4) * Math.PI / 2;
+    scene.add(grp);
+    buildings.push(grp);
+  }
+}
+
+/* =========================================================
+   OBSTACLES
    ========================================================= */
 const OB = { DIP:'dip', FUD:'fud', BEAR:'bear', HANDS:'hands' };
 
 function buildDip() {
   const g = new THREE.Group();
   const h = DIP_H * S;
-  const body = box(1.6, h, 0.5, toon(0xE03038));
-  inkOutline(body, 1.035);
+  /* a proper red candle: cylinder body, glowing wick */
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.62, h, 18), toon(0xE03038));
   body.position.y = h / 2; g.add(body);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.5, h * 0.8),
-    new THREE.MeshBasicMaterial({ map:labelTex('DIP', '#C41F25', '#ffffff'), transparent:false }));
-  face.position.set(0, h / 2, 0.26); g.add(face);
-  const wick = cyl(0.03, 0.03, 0.34, MAT.red, 8); wick.position.y = h + 0.17; g.add(wick);
+  inkOutline(body, 1.04);
+  const wick = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 8),
+    new THREE.MeshBasicMaterial({ color: 0xFF6B6F }));
+  wick.position.y = h + 0.21; g.add(wick);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.0, h * 0.62),
+    new THREE.MeshBasicMaterial({ map:labelTex('DIP', '#C41F25', '#ffffff') }));
+  face.position.set(0, h / 2, 0.63); g.add(face);
   return g;
 }
 function buildFud() {
   const g = new THREE.Group();
   const top = FUD_TOP * S;
-  const beamMat = toon(0x5A3FA6);
-  const beam = box(2.1, 0.55, 0.42, beamMat);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.55, 0.42), toon(0x5A3FA6));
   beam.position.y = top + 0.27; g.add(beam);
   inkOutline(beam, 1.03);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.46),
     new THREE.MeshBasicMaterial({ map:labelTex('FUD', '#2A1C52', '#FFE500') }));
   face.position.set(0, top + 0.27, 0.22); g.add(face);
+  // warning chevrons under the beam
+  const chevTex = cvsTex(128, 32, (gg, w, h) => {
+    gg.fillStyle = '#FFE500'; gg.fillRect(0, 0, w, h);
+    gg.fillStyle = '#0A0A0C';
+    for (let x = -h; x < w; x += 32) {
+      gg.beginPath(); gg.moveTo(x, h); gg.lineTo(x + 16, 0); gg.lineTo(x + 32, h);
+      gg.closePath(); gg.fill();
+    }
+  }, 3, 1);
+  const chev = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.12),
+    new THREE.MeshBasicMaterial({ map:chevTex }));
+  chev.position.set(0, top - 0.06, 0.22); g.add(chev);
   [-1, 1].forEach(sd => {
-    const post = box(0.16, top, 0.20, toon(0x221741));
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, top, 0.20), toon(0x221741));
     post.position.set(sd * 0.98, top / 2, 0); g.add(post);
+    inkOutline(post, 1.04);
   });
   return g;
 }
 function buildBear() {
   const g = new THREE.Group();
   const h = 232 * S;
-  const body = box(1.75, h, 0.55, toon(0xA31A22));
-  inkOutline(body, 1.03);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.75, h, 0.55), toon(0xA31A22));
   body.position.y = h / 2; g.add(body);
-  // label plane matches the texture aspect, otherwise the word gets clipped
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.65, 0.83),
-    new THREE.MeshBasicMaterial({ map:labelTex('BEAR', '#4A0C10', '#ffffff', 512, 256) }));
-  face.position.set(0, h * 0.62, 0.29); g.add(face);
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(1.65, h * 0.9),
-    new THREE.MeshBasicMaterial({ color:0x4A0C10 }));
-  back.position.set(0, h / 2, 0.285); g.add(back);
-  for (let i = 0; i < 4; i++) {
-    const s = box(1.5, 0.075, 0.02, MAT.red);
-    s.position.set(0, h - 0.22 - i * 0.30, 0.30); g.add(s);
-  }
+  inkOutline(body, 1.03);
+  /* claw slashes torn across the face */
+  const clawTex = cvsTex(256, 320, (gg, w, hh) => {
+    gg.fillStyle = '#7A1016'; gg.fillRect(0, 0, w, hh);
+    gg.strokeStyle = '#3A060A'; gg.lineWidth = 16; gg.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      gg.beginPath();
+      gg.moveTo(46 + i * 42, 30);
+      gg.quadraticCurveTo(80 + i * 42, 160, 40 + i * 42, 290);
+      gg.stroke();
+    }
+    gg.font = '900 64px "Archivo Black", Impact, sans-serif';
+    gg.textAlign = 'center'; gg.textBaseline = 'middle';
+    gg.lineWidth = 10; gg.strokeStyle = '#0A0A0C'; gg.strokeText('BEAR', w / 2, hh * 0.5);
+    gg.fillStyle = '#ffffff'; gg.fillText('BEAR', w / 2, hh * 0.5);
+  });
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.62, h * 0.92),
+    new THREE.MeshBasicMaterial({ map:clawTex }));
+  face.position.set(0, h / 2, 0.29); g.add(face);
   return g;
 }
+let wagonTpl = null;
 function buildHands() {
   const g = new THREE.Group();
   const h = 190 * S;
-  const body = box(1.85, h, 1.0, toon(0xCFC8B8));
-  inkOutline(body, 1.03);
-  body.position.y = h / 2; g.add(body);
-  const win = box(1.6, 0.5, 1.02, toon(0x14141A));
-  win.position.y = h - 0.42; g.add(win);
+  if (wagonTpl) {
+    const w = wagonTpl.obj.clone();
+    w.scale.setScalar(wagonTpl.s);
+    w.position.y = wagonTpl.y;
+    g.add(w);
+  } else {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.85, h, 1.0), toon(0xCFC8B8));
+    body.position.y = h / 2; g.add(body);
+    inkOutline(body, 1.03);
+  }
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.62),
-    new THREE.MeshBasicMaterial({ map:labelTex('PAPER HANDS', '#9C968A', '#121216', 512, 128) }));
-  face.position.set(0, h * 0.42, 0.52); g.add(face);
+    new THREE.MeshBasicMaterial({ map:labelTex('PAPER HANDS', '#9C968A', '#121216', 512, 128), transparent:false }));
+  face.position.set(0, h * 0.55, 0.98); g.add(face);
   return g;
 }
+function setupWagon() {
+  const t = ASSETS.wagon.scene;
+  toToon(t, { color: 0xCFC8B8, k: 0.35 });
+  const bb = new THREE.Box3().setFromObject(t);
+  const w = bb.max.x - bb.min.x, h = bb.max.y - bb.min.y;
+  const targetH = 190 * S;                       // matches the solid hitbox
+  const s = targetH / h;
+  wagonTpl = { obj:t, s, y: -bb.min.y * s };
+  // rotate so its length runs down the lane if it is a long model
+  const d = (bb.max.z - bb.min.z);
+  if (w > d) t.rotation.y = Math.PI / 2;
+}
+
 const OB_BUILD = { [OB.DIP]:buildDip, [OB.FUD]:buildFud, [OB.BEAR]:buildBear, [OB.HANDS]:buildHands };
 const obPool = { dip:[], fud:[], bear:[], hands:[] };
 function obGet(kind) {
@@ -766,7 +767,7 @@ function obGet(kind) {
 }
 function obFree(kind, m) { m.visible = false; obPool[kind].push(m); }
 
-/* coins */
+/* coins + power-ups */
 const coinGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.055, 20);
 const coinMat = toon(0xFFD400, { emissive:0x574400, emissiveIntensity:0.6 });
 const coinPool = [];
@@ -782,7 +783,6 @@ function coinGet() {
 }
 function coinFree(m) { m.visible = false; coinPool.push(m); }
 
-/* power-ups */
 const puMats = {
   visor: new THREE.MeshToonMaterial({ map:visorTex, gradientMap, emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.35 }),
   magnet: toon(0xF5F3EC),
@@ -821,8 +821,23 @@ function burst(x, y, z, color, n = 10, spread = 2.4) {
   }
 }
 
+/* blob contact shadow + aura */
+const shadowTex = cvsTex(64, 64, (g, w, h) => {
+  const r = g.createRadialGradient(w/2, h/2, 1, w/2, h/2, w/2);
+  r.addColorStop(0, 'rgba(0,0,0,.72)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = r; g.fillRect(0, 0, w, h);
+});
+const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0),
+  new THREE.MeshBasicMaterial({ map:shadowTex, transparent:true, depthWrite:false }));
+blob.rotation.x = -Math.PI / 2;
+blob.position.y = 0.012;
+scene.add(blob);
+const aura = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 14),
+  new THREE.MeshBasicMaterial({ color:0xFFE500, transparent:true, opacity:0.0, wireframe:true }));
+scene.add(aura);
+
 /* =========================================================
-   SPAWNING (identical balance to the validated 2D build)
+   CHUNK LIBRARY + SPAWNING (validated — verbatim)
    ========================================================= */
 const pickKind = () => {
   const r = Math.random();
@@ -830,22 +845,9 @@ const pickKind = () => {
 };
 const mkOb = (lane, kind, z) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ, dead:false, scored:false, mesh:null });
 const mkPick = (lane, kind, z, y) => ({ lane, kind, z, y: y || 38, x:undefined, seed:Math.random()*6, mesh:null });
-/* =========================================================
-   CHUNK LIBRARY
 
-   Shipping runners stream *authored* patterns from a pool and gate them behind
-   difficulty bands, rather than rolling each obstacle independently — random
-   assembly produces noise the player cannot learn. Each chunk declares:
-
-     cost  difficulty band it unlocks in
-     gate  true if it locks the bull in a jump/slide (~630ms)
-     build returns obstacles/pickups at TIME offsets (ms), converted to
-           distance at spawn, so every internal gap stays reaction-safe
-           no matter how fast the run has become.
-   ========================================================= */
-const COIN_MS = 118;            // spacing along a coin line
-const JUMP_LOCK_MS = 900;       // safe spacing between two forced jumps
-
+const COIN_MS = 118;
+const JUMP_LOCK_MS = 900;
 const rnd3 = () => Math.floor(Math.random() * 3);
 const other = free => (free + 1 + Math.floor(Math.random() * 2)) % 3;
 function coinLine(lane, at, n, y) {
@@ -853,7 +855,6 @@ function coinLine(lane, at, n, y) {
   for (let i = 0; i < n; i++) out.push({ lane, kind:'coin', at: at + i * COIN_MS, y: y || 62 });
   return out;
 }
-
 const CHUNKS = [
   { id:'breather', cost:0, gate:false, build(free) {
       const kinds = ['visor','magnet','x2'];
@@ -865,7 +866,6 @@ const CHUNKS = [
                pick:coinLine(free, 0, 5), len:0 };
   }},
   { id:'pinch', cost:1, gate:false, build(free) {
-      // both outer lanes walled, run the middle
       return { obs:[{ lane:0, kind:OB.BEAR, at:0 }, { lane:2, kind:OB.BEAR, at:0 }],
                pick:coinLine(1, 0, 6), len:0 };
   }},
@@ -875,9 +875,7 @@ const CHUNKS = [
       return { obs, pick:coinLine(free, 0, 6), len:0 };
   }},
   { id:'train', cost:2, gate:false, build(free) {
-      // 100-unit segment spacing keeps the hit windows contiguous (HIT_Z*2=104)
-      // so the lane behaves as one solid object with no phantom gap to swerve into
-      // spacing here is a DISTANCE requirement, not a timing one, so it uses atZ
+      // 100-unit spacing keeps hit windows contiguous (HIT_Z*2=104): one solid object
       const lane = other(free), obs = [];
       for (let i = 0; i < 3; i++) obs.push({ lane, kind:OB.HANDS, atZ: i * 100 });
       return { obs, pick:coinLine(free, 0, 7), lenZ:260 };
@@ -893,7 +891,6 @@ const CHUNKS = [
       return { obs, pick:coinLine(free, 150, 3, 26), len:0 };
   }},
   { id:'slalom', cost:3, gate:false, build(free) {
-      // weave left-right-left; lane changes are instant so 420ms is comfortable
       const a = rnd3(), b = (a + 1 + Math.floor(Math.random() * 2)) % 3, c = a;
       return { obs:[{ lane:a, kind:OB.BEAR, at:0 },
                     { lane:b, kind:OB.BEAR, at:460 },
@@ -902,7 +899,6 @@ const CHUNKS = [
                len:920 };
   }},
   { id:'stairs', cost:3, gate:true, build(free) {
-      // three forced jumps, spaced past the 633ms airtime so each one lands first
       const obs = [], pick = [];
       for (let i = 0; i < 3; i++) {
         const l = (free + i) % 3;
@@ -912,38 +908,29 @@ const CHUNKS = [
       return { obs, pick, len: 2 * JUMP_LOCK_MS };
   }},
   { id:'duck-run', cost:3, gate:true, build(free) {
-      // slide gate, then a wall in one lane so you must pick a side on landing
       const obs = [];
       for (let l = 0; l < 3; l++) obs.push({ lane:l, kind:OB.FUD, at:0 });
       obs.push({ lane:other(free), kind:OB.BEAR, at:1050 });
       return { obs, pick:coinLine(free, 120, 5, 26), len:1050 };
   }}
 ];
-
 function spawnWave() {
   const metres = G.dist / 10;
-  // difficulty bands: ease the player in, then unlock the harder authored sets
   const band = metres < 260 ? 1 : metres < 750 ? 2 : 3;
-
   let pool = CHUNKS.filter(c => c.cost <= band && !(G.lastGate && c.gate));
   if (!pool.length) pool = CHUNKS.filter(c => !c.gate && c.cost <= 1);
-
   const chunk = pool[Math.floor(Math.random() * pool.length)];
   const free = rnd3();
   const built = chunk.build(free);
   const base = G.spawnZ;
   const spd = G.speed;
-
   built.obs.forEach(o => G.obstacles.push(
     mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd))));
   built.pick.forEach(k => G.pickups.push(
     mkPick(k.lane, k.kind, base + (k.atZ !== undefined ? k.atZ : k.at * spd), k.y)));
-
   G.lastGate = chunk.gate;
-
-  /* Space chunks by TIME, not distance. Reaction happens in milliseconds, so a
-     fixed distance gap silently shrinks the window as speed climbs. The 860ms
-     floor clears a 633ms jump plus ~95ms of lead with margin. */
+  /* Space chunks by TIME, not distance — an 860ms floor clears a 633ms jump
+     plus lead with margin at any speed. */
   const gapMs = clamp(1480 - (spd - SPEED_START) * 780, 860, 1480);
   const chunkZ = (built.lenZ || 0) + (built.len || 0) * spd;
   G.spawnZ = base + chunkZ + gapMs * spd + Math.random() * 180;
@@ -974,8 +961,11 @@ function banner(k, v) {
 }
 
 /* =========================================================
-   INPUT (rules identical to the validated build)
+   INPUT — buffered, validated rules (verbatim)
    ========================================================= */
+const BUFFER_MS = 130;
+const buf = { jump: -1e9, slide: -1e9 };
+
 function wouldHit(kind, p) {
   if (kind === OB.DIP) return p.y < DIP_CLR;
   if (kind === OB.FUD) return !(p.slide > 0) && p.y < FUD_TOP;
@@ -984,14 +974,11 @@ function wouldHit(kind, p) {
 function move(dir) {
   const p = G.player;
   const next = clamp(p.lane + dir, 0, 2);
-  if (next === p.lane) return false;      // already at the edge — nothing to buffer
-  /* Refuse to swerve into something already alongside us — otherwise the player
-     is side-swiped by things they never ran into, which reads as a bug. The
-     intent is still valid though, so hold it briefly and retry once it clears. */
+  if (next === p.lane) return false;
   const blocked = G.obstacles.some(o =>
     !o.dead && o.lane === next && o.z > -112 && o.z < 142 && wouldHit(o.kind, p));
   if (blocked) {
-    p.nudge = dir * 34;                       // visible bounce, no silent no-op
+    p.nudge = dir * 34;
     blip(140, .06, 'square', .03);
     return false;
   }
@@ -999,25 +986,7 @@ function move(dir) {
   blip(dir > 0 ? 560 : 500, .05, 'sine', .03);
   return true;
 }
-/* ---------------------------------------------------------
-   Input forgiveness.
-
-   A press that arrives a few frames early must not be swallowed — the eye
-   runs ~13ms behind reality, so players routinely hit jump just before they
-   land. Genre guidance is a 100-150ms buffer; 130ms sits in the middle and
-   is short enough that it never fires an action the player has forgotten
-   about. Every buffered action re-checks its own legality when it fires.
-
-   Lane changes are deliberately NOT buffered. A lane press only ever fails when
-   something is genuinely alongside, and that lasts ~410ms at running speed —
-   far longer than any sane buffer — so holding the intent would either do
-   nothing or fire a sideways move the player had given up on.
-   --------------------------------------------------------- */
-const BUFFER_MS = 130;
-const buf = { jump: -1e9, slide: -1e9 };
-
 function canJump() { const p = G.player; return !p.air && p.slide <= 0; }
-
 function jump(buffered) {
   const p = G.player;
   if (!canJump()) { if (!buffered) buf.jump = G.t; return false; }
@@ -1029,27 +998,29 @@ function jump(buffered) {
 function slide(buffered) {
   const p = G.player;
   if (p.slide > 0) { if (!buffered) buf.slide = G.t; return false; }
-  if (p.air) p.vy = -JUMP_V * 0.85;      // slam down, then slide
+  if (p.air) p.vy = -JUMP_V * 0.85;
   p.slide = SLIDE_MS;
   buf.slide = -1e9;
+  if (actions.Roll) {
+    const a = actions.Roll;
+    a.timeScale = a.getClip().duration / (SLIDE_MS / 1000);
+    playAction('Roll', 0.08, { once:true, timeScale:a.timeScale });
+  }
   sfx.slide();
   return true;
 }
-
-/* Replay buffered input the moment it becomes legal. */
 function drainBuffer() {
   if (G.t - buf.jump < BUFFER_MS && canJump()) jump(true);
   else if (G.t - buf.jump >= BUFFER_MS) buf.jump = -1e9;
-
   if (G.t - buf.slide < BUFFER_MS && G.player.slide <= 0) slide(true);
   else if (G.t - buf.slide >= BUFFER_MS) buf.slide = -1e9;
-
 }
+
 const KEYS = {
   ArrowLeft:() => move(-1), a:() => move(-1), A:() => move(-1),
   ArrowRight:() => move(1), d:() => move(1), D:() => move(1),
-  ArrowUp:jump, w:jump, W:jump, ' ':jump,
-  ArrowDown:slide, s:slide, S:slide
+  ArrowUp:() => jump(), w:() => jump(), W:() => jump(), ' ':() => jump(),
+  ArrowDown:() => slide(), s:() => slide(), S:() => slide()
 };
 addEventListener('keydown', e => {
   const anyOv = !$('ovShop').hidden || !$('ovHelp').hidden || !$('ovScores').hidden;
@@ -1083,7 +1054,7 @@ cv.addEventListener('touchend', e => {
 cv.addEventListener('touchmove', e => { if (G.state === 'playing') e.preventDefault(); }, { passive:false });
 
 /* =========================================================
-   MISSIONS RUNTIME
+   MISSIONS RUNTIME (verbatim)
    ========================================================= */
 function bumpMission(type, n) {
   let ch = false;
@@ -1148,34 +1119,31 @@ function applyZone() {
   paintSky();
   scene.fog.color.setHex(Z.fog);
   renderer.setClearColor(Z.skyTop, 1);
-  /* material.color multiplies the texture — tinting it with the dark zone
-     colour crushed the asphalt to near-black and hid the shadows, so keep it
-     mostly white and let the road texture carry the tone. */
   road.material.color.setHex(Z.road).lerp(new THREE.Color(0xffffff), 0.74);
   ground.material.color.setHex(Z.road).lerp(new THREE.Color(0x2A2C3C), 0.55);
-  // dimmed so the skyline stays scenery and never competes with the obstacles
-  bldMatA.color.setHex(Z.bldA).multiplyScalar(0.38);
-  bldMatB.color.setHex(Z.bldB).multiplyScalar(0.38);
   rim.color.setHex(Z.rim);
   sun.material.color.setHex(Z.sun);
   railMat.color.setHex(Z.sun);
 }
 function start() {
+  if (!assetsReady) return;
   rollMissions();
   clearField();
   Object.assign(G, {
     state:'playing', speed:SPEED_START, dist:0, score:0, coins:0, mult:1,
     zone:0, nextZoneM:ZONE_M, streak:0, combo:1, lastCoinT:-1e9,
     nearMiss:0, jumps:0, powers:0, revives:upLvl('life'),
-    shake:0, flash:0, hitFlash:0, landT:0, travelled:0, spawnZ:900, lastGate:false,
+    shake:0, flash:0, hitFlash:0, landT:0, deathT:0,
+    travelled:0, spawnZ:900, lastGate:false,
     wJump:0, wSlide:0
   });
   Object.assign(G.player, {
-    lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0, phase:0,
+    lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0,
     nudge:0, inv:upLvl('head') * 2000, magnet:0, x2:0
   });
-  buf.jump = buf.slide = -1e9;              // no held input carries into a new run
+  buf.jump = buf.slide = -1e9;
   applyZone();
+  playAction('Run', 0.2);
   ['ovStart','ovOver','ovPause','ovShop','ovHelp','ovScores'].forEach(id => $(id).hidden = true);
   $('hud').hidden = false;
   $('cornerBR').classList.add('is-hidden');
@@ -1206,9 +1174,18 @@ function rankFor(s) {
   if (s < 22000) return 'DENIAL GRANDMASTER';
   return 'SLINGOR HIMSELF 🐂';
 }
+/* crash → short dying beat with the Death clip, then the overlay */
+function beginDeath() {
+  G.state = 'dying';
+  G.deathT = DEATH_MS;
+  playAction('Death', 0.10, { once:true });
+  sfx.hit();
+  G.shake = 1; G.hitFlash = 1;
+  burst(G.player.x * S, 1.0, 0, 0xE8232A, 22, 3.6);
+  cv.classList.remove('is-playing');
+}
 function gameOver() {
   G.state = 'over';
-  cv.classList.remove('is-playing');
   $('pad').classList.remove('is-on');
   $('cornerBR').classList.remove('is-hidden');
   sfx.over();
@@ -1240,7 +1217,6 @@ function gameOver() {
 function revive() {
   if (G.revives <= 0) return;
   G.revives--;
-  // clear the road ahead so the player does not die again instantly
   for (let i = G.obstacles.length - 1; i >= 0; i--) {
     const o = G.obstacles[i];
     if (o.z <= 800) { if (o.mesh) obFree(o.kind, o.mesh); G.obstacles.splice(i, 1); }
@@ -1248,6 +1224,7 @@ function revive() {
   const p = G.player;
   p.y = 0; p.vy = 0; p.air = false; p.slide = 0; p.inv = 2800;
   G.state = 'playing';
+  playAction('Run', 0.2);
   $('ovOver').hidden = true; $('hud').hidden = false;
   $('cornerBR').classList.add('is-hidden');
   if (isTouch) $('pad').classList.add('is-on');
@@ -1267,15 +1244,25 @@ function toMenu() {
   G.zone = 0; applyZone();
   clearField();
   seedIdle();
+  playAction('Run', 0.3);
   refreshMenus();
   if (!G.raf) G.raf = requestAnimationFrame(loop);
 }
 
 /* =========================================================
-   UPDATE
+   UPDATE (validated core — verbatim except the dying branch)
    ========================================================= */
 function update(dt) {
   const p = G.player;
+
+  if (G.state === 'dying') {
+    G.deathT -= dt;
+    G.hitFlash = Math.max(0, G.hitFlash - dt * 0.003);
+    G.shake = Math.max(0, G.shake - dt * 0.004);
+    if (G.deathT <= 0) gameOver();
+    return;
+  }
+
   G.speed = Math.min(SPEED_MAX, G.speed + SPEED_RAMP * dt);
   const travel = G.speed * dt;
   G.dist += travel; G.travelled += travel;
@@ -1293,9 +1280,6 @@ function update(dt) {
 
   drainBuffer();
 
-  /* Lane glide. Without this p.x never leaves 0: the logical lane changes and
-     collisions follow it, but the bull and camera never move — which reads as
-     the controls being dead. vx drives the strafe lean. */
   const prevX = p.x;
   p.x = damp(p.x, LANES[p.lane], 13, dt);
   p.vx = dt > 0 ? (p.x - prevX) / dt : 0;
@@ -1309,11 +1293,10 @@ function update(dt) {
       burst(p.x * S, 0.06, 0.1, 0xFFE500, 8, 1.8);
     }
   }
-  if (p.slide > 0) p.slide -= dt;
-  // cadence matched to ground speed: at the old rate the bull covered ~2.8m
-  // per stride cycle against a ~1.3m visual stride, so the feet skated -
-  // which the eye reads as running backwards on a treadmill
-  if (!p.air) p.phase += dt * 0.0205 * (G.speed / SPEED_START);
+  if (p.slide > 0) {
+    p.slide -= dt;
+    if (p.slide <= 0 && G.state === 'playing') playAction('Run', 0.16);
+  }
 
   p.inv = Math.max(0, p.inv - dt);
   p.magnet = Math.max(0, p.magnet - dt);
@@ -1349,9 +1332,7 @@ function update(dt) {
         burst(p.x * S, 1.0, 0, 0xFFE500, 16, 3.2);
         G.flash = 0.5; blip(880, .08, 'square', .05);
       } else {
-        sfx.hit(); G.shake = 1; G.hitFlash = 1;
-        burst(p.x * S, 1.0, 0, 0xE8232A, 22, 3.6);
-        gameOver();
+        beginDeath();
         return;
       }
     }
@@ -1407,106 +1388,39 @@ function syncCombo(flash) {
 }
 
 /* =========================================================
-   ANIMATION — the run cycle
+   CHARACTER ANIMATION DRIVER
    ========================================================= */
 function poseBull(dt) {
   const p = G.player;
-  const ph = p.phase;
-  const spd = G.speed / SPEED_START;
 
-  // blend weights make transitions read as motion rather than snapping
   G.wJump  = damp(G.wJump,  p.air ? 1 : 0,      14, dt);
   G.wSlide = damp(G.wSlide, p.slide > 0 ? 1 : 0, 18, dt);
-  const wR = Math.max(0, 1 - G.wJump - G.wSlide);   // run weight
 
-  /* ---- run cycle ---- */
-  const sinA = Math.sin(ph), sinB = Math.sin(ph + Math.PI);
-  const rThighL = sinA * 0.92 - 0.10;
-  const rThighR = sinB * 0.92 - 0.10;
-  // knees only ever bend one way; peak just after the thigh passes back
-  /* One clean knee lobe per stride: bend from toe-off through the swing (heel
-     kicks up while the foot travels forward), dead straight at heel-strike and
-     through stance. This puts the foot's height a quarter-cycle out of phase
-     with its forward travel — the quadrature that makes a gait read forwards.
-     The old curve peaked with the leg straight out front: goose-stepping. */
-  const heelL = Math.max(0, -Math.sin(ph - 0.6));
-  const heelR = Math.max(0, -Math.sin(ph + Math.PI - 0.6));
-  const rKneeL = -(0.15 + heelL * 1.5);
-  const rKneeR = -(0.15 + heelR * 1.5);
-  const rAnkL = clamp(Math.sin(ph + 1.2), -1, 1) * 0.34;
-  const rAnkR = clamp(Math.sin(ph + Math.PI + 1.2), -1, 1) * 0.34;
-  const rShL = -sinA * 0.80 + 0.18, rShR = -sinB * 0.80 + 0.18;
-  /* Elbows flex FORWARD (+x rotation drives the hanging forearm toward -z).
-     The old negative sign trailed the forearms out behind the body — arms
-     pumping backwards is the single loudest "running the wrong way" cue. */
-  const rElL = 1.15 + Math.max(0, -sinA) * 0.40;
-  const rElR = 1.15 + Math.max(0, -sinB) * 0.40;
-  const bob = Math.abs(Math.sin(ph)) * 0.055;
-  const hipTwist = -sinA * 0.13, torsoTwist = sinA * 0.15;
+  if (mixer) {
+    // run cadence follows ground speed so the feet never skate
+    if (actions.Run && currentAction === actions.Run)
+      actions.Run.timeScale = 0.92 * (G.speed / SPEED_START);
+    mixer.update(dt / 1000);
+    // manual jump pose layered over the mixer (the pack has no jump clip)
+    if (G.wJump > 0.02) applyJumpPose(G.wJump);
+  }
 
-  /* ---- jump pose ---- */
-  const jThigh = 0.95, jThigh2 = 0.25, jKnee = -1.5, jKnee2 = -0.7;
-  const jSh = -1.9, jEl = 0.9;
-
-  /* ---- slide pose ---- */
-  const sThigh = 1.35, sKnee = -0.55, sSh = 1.25, sEl = 0.8;
-
-  const mix3 = (r, j, s) => r * wR + j * G.wJump + s * G.wSlide;
-
-  legL.hip.rotation.x   = mix3(rThighL, jThigh,  sThigh);
-  legR.hip.rotation.x   = mix3(rThighR, jThigh2, sThigh * 0.85);
-  legL.knee.rotation.x  = mix3(rKneeL,  jKnee,   sKnee);
-  legR.knee.rotation.x  = mix3(rKneeR,  jKnee2,  sKnee * 0.7);
-  legL.ankle.rotation.x = mix3(rAnkL, 0.35, -0.30);
-  legR.ankle.rotation.x = mix3(rAnkR, 0.25, -0.30);
-
-  armL.shoulder.rotation.x = mix3(rShL, jSh, sSh);
-  armR.shoulder.rotation.x = mix3(rShR, jSh * 0.86, sSh * 0.9);
-  armL.elbow.rotation.x    = mix3(rElL, jEl, sEl);
-  armR.elbow.rotation.x    = mix3(rElR, jEl, sEl);
-  armL.shoulder.rotation.z =  0.16 + G.wSlide * 0.25;
-  armR.shoulder.rotation.z = -0.16 - G.wSlide * 0.25;
-
-  // pelvis: bob, twist, and the slide crouch
-  pelvis.position.y = mix3(0.87 + bob, 0.85, 0.44);
-  pelvis.rotation.y = hipTwist * wR;
-  pelvis.rotation.x = mix3(0, -0.10, 0.30);
-
-  torso.rotation.y = torsoTwist * wR;
-  torso.rotation.x = mix3(0.15 + Math.abs(sinA) * 0.03, 0.34, 0.62);
-  torso.rotation.z = mix3(-sinA * 0.04, 0, 0);
-
-  // head counter-rotates so it stays level and aimed down the road
-  head.rotation.y = -torso.rotation.y * 0.7;
-  head.rotation.x = -torso.rotation.x * 0.72 + Math.sin(ph * 2) * 0.03;
-  head.rotation.z = -torso.rotation.z * 0.6;
-
-  tailRoot.rotation.z = Math.sin(ph * 0.9) * 0.30;
-  tailRoot.rotation.x = 0.25 + Math.sin(ph * 1.8) * 0.12;
-
-  /* World placement. A strafe reads as motion only if the body banks and turns
-     into it — sliding sideways bolt upright looks like the model is on rails. */
+  /* world placement — bank INTO the move, face INTO the move.
+     rotation.y sign: the bull faces -Z, Ry(θ) sends that heading to
+     x = -sinθ, so facing the travel direction needs θ = -strafe·k. */
+  const strafe = G.state === 'playing' ? clamp((p.vx || 0) * 1.05, -1, 1) : 0;
   const px = (p.x + p.nudge) * S;
   bull.position.x = px;
   bull.position.y = p.y * S;
-  /* Bank INTO the move and face INTO the move. Sign check: the bull faces -Z,
-     and Ry(θ) sends that heading to x = -sinθ — so facing the direction of
-     travel needs θ = -strafe·k. The old +sign turned the body AGAINST the
-     strafe, which read as the character moving the wrong way. */
-  const strafe = G.state === 'playing' ? clamp((p.vx || 0) * 1.05, -1, 1) : 0;
-  bull.rotation.z = damp(bull.rotation.z, -strafe * 0.30 - (p.nudge * S) * 0.5, 12, dt);
-  bull.rotation.y = damp(bull.rotation.y, -strafe * 0.44, 11, dt);
-  torso.rotation.z += strafe * 0.10;           // shoulders counter-steer
-  armL.shoulder.rotation.z += -strafe * 0.28;
-  armR.shoulder.rotation.z += -strafe * 0.28;
+  bull.rotation.z = damp(bull.rotation.z, -strafe * 0.26 - (p.nudge * S) * 0.5, 12, dt);
+  bull.rotation.y = damp(bull.rotation.y, -strafe * 0.40, 11, dt);
 
-  // squash on landing, stretch on take-off — weight without a single keyframe
+  // squash on landing, stretch on take-off
   let sq = 0;
-  if (G.landT > 0) sq = -Math.sin((1 - G.landT / 160) * Math.PI) * 0.14;
-  else if (p.air && p.vy > 0.35) sq = 0.10;
+  if (G.landT > 0) sq = -Math.sin((1 - G.landT / 160) * Math.PI) * 0.12;
+  else if (p.air && p.vy > 0.35) sq = 0.08;
   bull.scale.set(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6);
 
-  // real shadow maps do the grounding now; the blob only adds contact darkening
   blob.position.set(px, 0.012, 0);
   const sc = clamp(1 - p.y * S * 0.42, 0.42, 1);
   blob.scale.set(sc * 0.8, sc * 0.8 * (G.wSlide > 0.5 ? 1.25 : 1), 1);
@@ -1514,7 +1428,7 @@ function poseBull(dt) {
 
   aura.visible = p.inv > 0;
   if (aura.visible) {
-    aura.position.set(px, 1.0 + p.y * S, 0);
+    aura.position.set(px, 0.9 + p.y * S, 0);
     const pulse = 0.5 + Math.sin(G.t / 90) * 0.22;
     aura.material.opacity = 0.16 + pulse * 0.14;
     aura.material.color.setHSL((G.t / 900) % 1, 1, 0.6);
@@ -1530,42 +1444,33 @@ function syncWorld(dt) {
   const p = G.player;
   const scroll = G.travelled * S;
 
-  /* The road pattern must stream TOWARD the camera — the same +z direction the
-     obstacles, lamps and buildings travel. With the old minus sign the ground
-     moonwalked away to the horizon while the world flew past, which players
-     read as the bull running the wrong way. Wrapped so precision holds. */
+  /* road streams TOWARD the camera — same +z direction as the world */
   roadTex.offset.y = (scroll / TILE) % 1;
 
   const kerbSpan = KERB_LEN * KERB_N;
   for (const k of kerbs) {
-    k.position.z += G.speed * dt * S;
+    k.position.z += G.speed * dt * S * (G.state === 'playing' ? 1 : 0.55);
     if (k.position.z > 12 + KERB_LEN) k.position.z -= kerbSpan;
   }
-
-  // lamps stream past — the clearest read on how fast the bull is going
   const lampSpan = LAMP_GAP * (lamps.length / 2);
   for (const L of lamps) {
-    L.position.z += G.speed * dt * S;
+    L.position.z += G.speed * dt * S * (G.state === 'playing' ? 1 : 0.55);
     if (L.position.z > 8) L.position.z -= lampSpan;
   }
-
-  // buildings recycle for genuine parallax depth
   for (const b of buildings) {
-    b.position.z += G.speed * dt * S;
+    b.position.z += G.speed * dt * S * (G.state === 'playing' ? 1 : 0.55);
     if (b.position.z > 16) {
       b.position.z -= 150 + Math.random() * 30;
-      b.position.x = (Math.random() > .5 ? 1 : -1) * (13 + Math.random() * 26);
+      b.position.x = (Math.random() > .5 ? 1 : -1) * (6.8 + (b.userData.halfW || 2) + Math.random() * 14);
     }
   }
 
-  // obstacles
   for (const o of G.obstacles) {
     if (o.z > Z_SPAWN + 200) continue;
     if (!o.mesh) o.mesh = obGet(o.kind);
     o.mesh.position.set(LANES[o.lane] * S, 0, -o.z * S);
     o.mesh.visible = o.z < Z_FAR + 400;
   }
-  // pickups
   for (const k of G.pickups) {
     if (k.z > Z_SPAWN + 200) continue;
     if (!k.mesh) k.mesh = k.kind === 'coin' ? coinGet() : puGet(k.kind);
@@ -1575,7 +1480,6 @@ function syncWorld(dt) {
     else { k.mesh.rotation.y += dt * 0.0022; k.mesh.rotation.x += dt * 0.0012; }
   }
 
-  // particles
   for (const q of parts) {
     if (q.life <= 0) continue;
     q.life -= dt * 0.0022;
@@ -1587,16 +1491,10 @@ function syncWorld(dt) {
     q.m.scale.setScalar(clamp(q.life, 0, 1));
   }
 
-  // chase camera: lags the lane change and leans into it
-  /* Chase cam sits well back and above so the road ahead — not the bull's back —
-     owns the frame. It follows the lane FULLY, with a hard clamp on the lag:
-     on portrait viewports the horizontal margin is so small that even a 200ms
-     trail lets the player leave the frame. The turn's weight comes from the
-     bull banking into it, not from the camera falling behind. */
+  /* chase cam: full follow, hard-clamped trail; high vantage so the road
+     ahead — not the character's back — owns the frame */
   camRig.x = damp(camRig.x, p.x * S, 11, dt);
   camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
-  /* High vantage: the camera looks DOWN over the bull's head, so the player
-     reads the next two waves of obstacles instead of the character's back. */
   camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
   camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 7.5, 3, dt);
   if (G.shake > 0) {
@@ -1609,7 +1507,6 @@ function syncWorld(dt) {
   camera.lookAt(camRig.x, 0.50 + p.y * S * 0.40, -9.5);
   camera.updateProjectionMatrix();
 
-  // the shadow frustum is tight, so the key light rides along with the bull
   const px0 = p.x * S;
   key.position.set(px0 - 3.4, 7.0, 5.0);
   key.target.position.set(px0, 0, -6);
@@ -1617,14 +1514,13 @@ function syncWorld(dt) {
   sun.position.x = camRig.x * 0.4;
   sky.position.set(camera.position.x, 0, camera.position.z);
 
-  // flashes via a DOM-free approach: tint the renderer clear + exposure
-  renderer.toneMappingExposure = 1.12 + G.flash * 0.9;
+  renderer.toneMappingExposure = 0.98 + G.flash * 0.9;
   if (G.hitFlash > 0) {
     hemi.color.setHex(0xFF4444);
-    hemi.intensity = 0.62 + G.hitFlash * 1.4;
+    hemi.intensity = 0.88 + G.hitFlash * 1.2;
   } else {
-    hemi.color.setHex(0x9FB4FF);
-    hemi.intensity = 0.62;
+    hemi.color.setHex(0xC6D4FF);
+    hemi.intensity = 0.88;
   }
 }
 
@@ -1654,18 +1550,14 @@ function loop(now) {
   G.raf = null;
   const raw = now - G.last;
   G.last = now;
-  // clamp: a backgrounded tab must not teleport the bull into an obstacle
-  const dt = clamp(raw, 0, 48);
+  const dt = clamp(raw, 0, 48);   // backgrounded tab must not teleport the bull
   G.t += dt;
 
-  if (G.state === 'playing') {
+  if (G.state === 'playing' || G.state === 'dying') {
     update(dt);
-    if (G.state !== 'playing') { G.raf = requestAnimationFrame(loop); return; }
-    drawHud(dt);
+    if (G.state === 'playing' || G.state === 'dying') drawHud(dt);
   } else {
-    // idle / menu: keep the world alive at a gentle pace
     G.travelled += SPEED_START * dt * 0.55;
-    G.player.phase += dt * 0.010;
   }
   poseBull(dt);
   syncWorld(dt);
@@ -1674,34 +1566,28 @@ function loop(now) {
 }
 
 /* =========================================================
-   IDLE SEED
+   IDLE SEED / RESIZE
    ========================================================= */
 function seedIdle() {
   G.obstacles.push(mkOb(0, OB.BEAR, 900));
   G.obstacles.push(mkOb(2, OB.FUD, 1500));
-  for (let i = 0; i < 6; i++) G.pickups.push(mkPick(1, 'coin', 520 + i * 150, 38));
+  for (let i = 0; i < 6; i++) G.pickups.push(mkPick(1, 'coin', 520 + i * 150, 62));
 }
-
-/* =========================================================
-   RESIZE
-   ========================================================= */
 let aspectNarrow = false;
 function resize() {
   const w = Math.max(320, cv.clientWidth || 320);
   const h = Math.max(240, cv.clientHeight || 240);
-  // bloom is fill-rate hungry; cap the ratio a little lower when it is on
   renderer.setPixelRatio(Math.min(composer ? 1.6 : 2, window.devicePixelRatio || 1));
   renderer.setSize(w, h, false);
   if (composer) composer.setSize(w, h);
   camera.aspect = w / h;
-  // on portrait screens widen the view so all three lanes stay framed
   aspectNarrow = w / h < 1;
   camera.fov = camRig.fov * (aspectNarrow ? 1.24 : 1);
   camera.updateProjectionMatrix();
 }
 
 /* =========================================================
-   MENUS
+   MENUS (verbatim)
    ========================================================= */
 function upCost(key) {
   const lvl = upLvl(key);
@@ -1786,8 +1672,13 @@ document.addEventListener('fullscreenchange', () => setTimeout(resize, 120));
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 
 /* =========================================================
-   BOOT
+   BOOT — gate Play on the asset load
    ========================================================= */
+const bPlay = $('bPlay');
+bPlay.disabled = true;
+const playLabel = bPlay.textContent;
+bPlay.textContent = 'LOADING…';
+
 applyZone();
 seedIdle();
 resize();
@@ -1795,9 +1686,34 @@ refreshMenus();
 G.last = performance.now();
 G.raf = requestAnimationFrame(loop);
 
+(async () => {
+  try {
+    const entries = Object.entries(ASSET_FILES);
+    const results = await Promise.all(entries.map(([, url]) => loadGlb(url)));
+    entries.forEach(([k], i) => { ASSETS[k] = results[i]; });
+    setupCharacter(ASSETS.character);
+    setupWagon();
+    setupBuildings();
+    assetsReady = true;
+    bPlay.disabled = false;
+    bPlay.textContent = playLabel;
+  } catch (err) {
+    console.error('asset load failed', err);
+    document.querySelectorAll('.ov').forEach(o => o.hidden = true);
+    const ft = $('failTitle'), fm = $('failMsg');
+    if (ft && fm) {
+      ft.innerHTML = 'ASSETS <span class="ov__red">FAILED</span>';
+      fm.textContent = 'The 3D models could not load. Check the connection and reload.';
+      $('ovFail').hidden = false;
+    }
+  }
+})();
+
 if (/(\?|&)debug=1\b/.test(location.search)) {
-  window.__BULLRUN = { G, save, THREE, scene, camera, renderer, bull, legL, armL,
+  window.__BULLRUN = { G, save, THREE, scene, camera, renderer, bull, bones, actions,
+    get mixer() { return mixer; },
     start, pause, resume, gameOver, revive, update, poseBull, syncWorld, spawnWave,
-    move, jump, slide, resize, LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S,
+    move, jump, slide, resize, LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S, DEATH_MS,
+    ready: () => assetsReady,
     render: () => present() };
 }

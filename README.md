@@ -58,6 +58,15 @@ The game page pulls Three.js via an import map from jsDelivr — the only
 third-party runtime dependency anywhere in the repo, and it never loads for
 normal site visitors.
 
+The character, buildings and the obstacle train are professional **CC0
+(public-domain) models** by Quaternius and Kenney — see
+`assets/game/LICENSES.md` for the full manifest. The character is a rigged,
+animated GLTF driven by an AnimationMixer (Run / Roll / Death clips; the jump
+is posed on the bones directly, the pack ships no jump clip), with the meme
+bull head — horns, striped beanie, rainbow visor, teardrop earrings, painted
+bellowing face — mounted on the Head bone like a mascot suit, and the human
+head shrunk away inside it.
+
 ### What is built
 
 A full-screen 3D endless runner on its own page (`game.html`), rendered with
