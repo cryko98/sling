@@ -1489,10 +1489,14 @@ function gameOver() {
   $('oMissions').innerHTML = done.length
     ? `<div class="rank" style="color:var(--green)">✓ ${done.length} MISSION${done.length>1?'S':''} COMPLETE · +${done.reduce((a,m)=>a+m.reward,0)} <i class="coin"></i></div>` : '';
   $('bRevive').hidden = G.revives <= 0;
-  /* the tweet must not read as a real-token claim — the coins are game points */
-  const share = `I ran ${fmt(dist)}m as The Retarded Bull and bagged ${G.coins} in-game $SLING coins 🐂 (game points only, not the real token)\n\nbull run again.`;
-  $('oShare').href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(share) +
-    '&url=' + encodeURIComponent(location.origin + location.pathname);
+  /* share template as specified by the project owner — the link lives inside
+     the text, so no separate url= param (X would append it twice) */
+  const share = `Loving The Retarded Bull 🤡 🐂\n\n` +
+    `Just bagged ${G.coins} in-game $sling coins in a ${fmt(dist)}m run. ` +
+    `Game points only for now - P2E coming in future upgrades.\n\n` +
+    `Think you can beat it?\n\n` +
+    `Play Bull Run again: https://www.theslingbull.fun/game`;
+  $('oShare').href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(share);
   $('hud').hidden = true;
   $('ovOver').hidden = false;
   refreshMenus();
