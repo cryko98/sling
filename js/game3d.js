@@ -162,6 +162,83 @@ const sfx = {
 };
 
 /* =========================================================
+   MUSIC — procedural chiptune, zero assets
+   A driving A-minor-pentatonic loop: kick four-on-the-floor, offbeat
+   hats, triangle bass walking A-C-D-E, square arp on top. Scheduled
+   ~120ms ahead on the AudioContext clock so it never stutters.
+   ========================================================= */
+const MUSIC = { on:false, timer:null, step:0, nextT:0, gain:null };
+const M_BPM = 132, M_STEP = 60 / M_BPM / 2;         // 8th notes
+const M_SCALE = [0, 3, 5, 7, 10];                    // minor pentatonic
+const M_BASS = [0,0,0,0, 3,3,3,3, 5,5,5,5, 7,7,10,7]; // semitones over A1
+const mHz = n => 55 * Math.pow(2, n / 12);
+function mTone(t, freq, dur, type, vol, slideTo) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(MUSIC.gain);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+function mHat(t, vol) {
+  const len = 0.05;
+  const buf = AC.createBuffer(1, Math.floor(AC.sampleRate * len), AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6500;
+  const g = AC.createGain(); g.gain.value = vol;
+  src.connect(hp); hp.connect(g); g.connect(MUSIC.gain);
+  src.start(t);
+}
+function mSchedule() {
+  if (!MUSIC.on || !AC) return;
+  const ahead = AC.currentTime + 0.14;
+  let guard = 0;
+  while (MUSIC.nextT < ahead && guard++ < 24) {
+    const t = MUSIC.nextT, s = MUSIC.step, i16 = s % 16;
+    const root = M_BASS[i16];
+    if (s % 4 === 0) mTone(t, 150, 0.12, 'sine', 0.85, 44);          // kick
+    if (s % 2 === 1) mHat(t, 0.22);                                   // offbeat hat
+    mTone(t, mHz(root), M_STEP * 0.92, 'triangle', 0.42);            // bass
+    if (s % 2 === 0) mTone(t, mHz(root + 12), M_STEP * 0.4, 'square', 0.09);
+    // arp lead: two 16ths per step, pattern rotates each two bars
+    const rot = Math.floor(s / 32) % 3;
+    const n1 = M_SCALE[(i16 + rot) % 5] + root + 24;
+    const n2 = M_SCALE[(i16 + rot + 2) % 5] + root + 24;
+    mTone(t, mHz(n1), M_STEP * 0.48, 'square', 0.14);
+    mTone(t + M_STEP / 2, mHz(n2), M_STEP * 0.40, 'square', 0.10);
+    MUSIC.nextT += M_STEP;
+    MUSIC.step++;
+  }
+}
+function musicStart() {
+  if (!save.sound || MUSIC.on) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    if (!MUSIC.gain) {
+      MUSIC.gain = AC.createGain();
+      MUSIC.gain.gain.value = 0.12;                 // bed, not foreground
+      MUSIC.gain.connect(AC.destination);
+    }
+    MUSIC.on = true;
+    MUSIC.step = 0;
+    MUSIC.nextT = AC.currentTime + 0.08;
+    clearInterval(MUSIC.timer);
+    MUSIC.timer = setInterval(mSchedule, 30);
+  } catch {}
+}
+function musicStop() {
+  MUSIC.on = false;
+  clearInterval(MUSIC.timer);
+  MUSIC.timer = null;
+}
+
+/* =========================================================
    RENDERER / SCENE / LIGHTS
    ========================================================= */
 const renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true, powerPreference:'high-performance' });
@@ -701,29 +778,76 @@ function buildFud() {
   return g;
 }
 function buildBear() {
+  /* An actual bear rearing up in the lane — the bear market itself — not a
+     painted wall. Faces +Z (the player). Solid hitbox height unchanged. */
   const g = new THREE.Group();
-  const h = 232 * S;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.75, h, 0.55), toon(0xA31A22));
-  body.position.y = h / 2; g.add(body);
-  inkOutline(body, 1.03);
-  /* claw slashes torn across the face */
-  const clawTex = cvsTex(256, 320, (gg, w, hh) => {
-    gg.fillStyle = '#7A1016'; gg.fillRect(0, 0, w, hh);
-    gg.strokeStyle = '#3A060A'; gg.lineWidth = 16; gg.lineCap = 'round';
-    for (let i = 0; i < 3; i++) {
-      gg.beginPath();
-      gg.moveTo(46 + i * 42, 30);
-      gg.quadraticCurveTo(80 + i * 42, 160, 40 + i * 42, 290);
-      gg.stroke();
-    }
-    gg.font = '900 64px "Archivo Black", Impact, sans-serif';
-    gg.textAlign = 'center'; gg.textBaseline = 'middle';
-    gg.lineWidth = 10; gg.strokeStyle = '#0A0A0C'; gg.strokeText('BEAR', w / 2, hh * 0.5);
-    gg.fillStyle = '#ffffff'; gg.fillText('BEAR', w / 2, hh * 0.5);
+  const H = 232 * S;                               // ≈2.1m validated solid
+  const fur  = toon(0x8F1B22);
+  const furD = toon(0x5E1014);
+  const claw = toon(0xF5F0E2);
+  const sph = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), m);
+  const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+
+  // stubby legs
+  [-1, 1].forEach(sd => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.24, 0.55, 12), furD);
+    leg.position.set(sd * 0.34, 0.28, 0); g.add(leg);
   });
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.62, h * 0.92),
-    new THREE.MeshBasicMaterial({ map:clawTex }));
-  face.position.set(0, h / 2, 0.29); g.add(face);
+  // body — big rounded mass with a darker belly patch
+  const body = sph(0.62, fur);
+  body.scale.set(1.05, 1.25, 0.82);
+  body.position.y = 1.08; g.add(body);
+  inkOutline(body, 1.045);
+  const bellyP = sph(0.40, furD);
+  bellyP.scale.set(0.95, 1.1, 0.5);
+  bellyP.position.set(0, 1.02, 0.36); g.add(bellyP);
+  // arms thrown up-and-out, ready to maul
+  [-1, 1].forEach(sd => {
+    const arm = new THREE.Group();
+    arm.position.set(sd * 0.60, 1.62, 0);
+    arm.rotation.z = sd * 2.25;
+    arm.rotation.x = -0.25;
+    g.add(arm);
+    const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.155, 0.42, 6, 12), fur);
+    limb.position.y = -0.30; arm.add(limb);
+    inkOutline(limb, 1.06);
+    const paw = sph(0.20, furD); paw.position.y = -0.62; arm.add(paw);
+    for (let c = -1; c <= 1; c++) {
+      const nail = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.20, 8), claw);
+      nail.position.set(c * 0.10, -0.80, 0.02);
+      nail.rotation.x = Math.PI;
+      arm.add(nail);
+    }
+  });
+  // head
+  const head = sph(0.40, fur);
+  head.position.y = 1.86; g.add(head);
+  inkOutline(head, 1.05);
+  [-1, 1].forEach(sd => {
+    const ear = sph(0.13, furD); ear.position.set(sd * 0.28, 2.16, -0.02); g.add(ear);
+  });
+  const snout = box(0.30, 0.20, 0.22, furD);
+  snout.position.set(0, 1.78, 0.36); g.add(snout);
+  const nose = sph(0.06, toon(0x0A0A0C)); nose.position.set(0, 1.83, 0.48); g.add(nose);
+  // angry eyes — tilted white slabs with pupils
+  [-1, 1].forEach(sd => {
+    const eye = box(0.14, 0.07, 0.03, claw);
+    eye.position.set(sd * 0.15, 1.95, 0.375);
+    eye.rotation.z = sd * -0.42;
+    g.add(eye);
+    const pup = box(0.05, 0.05, 0.032, toon(0x0A0A0C));
+    pup.position.set(sd * 0.12, 1.93, 0.378);
+    g.add(pup);
+  });
+  // open snarl with teeth
+  const mouth = box(0.26, 0.10, 0.05, toon(0x20070D));
+  mouth.position.set(0, 1.70, 0.42); g.add(mouth);
+  const teeth = box(0.22, 0.03, 0.052, claw);
+  teeth.position.set(0, 1.735, 0.421); g.add(teeth);
+
+  // scale the whole bear so the ears top out at the validated hitbox height
+  const s = H / 2.29;
+  g.children.forEach(c => { c.position.multiplyScalar(s); c.scale.multiplyScalar(s); });
   return g;
 }
 let wagonTpl = null;
@@ -1150,6 +1274,7 @@ function start() {
   buf.jump = buf.slide = -1e9;
   applyZone();
   playAction('Run', 0.2);
+  musicStart();
   ['ovStart','ovOver','ovPause','ovShop','ovHelp','ovScores'].forEach(id => $(id).hidden = true);
   $('hud').hidden = false;
   $('cornerBR').classList.add('is-hidden');
@@ -1165,10 +1290,12 @@ function start() {
 function pause() {
   if (G.state !== 'playing') return;
   G.state = 'paused'; $('ovPause').hidden = false; cv.classList.remove('is-playing');
+  musicStop();
 }
 function resume() {
   if (G.state !== 'paused') return;
   G.state = 'playing'; $('ovPause').hidden = true; cv.classList.add('is-playing');
+  musicStart();
   G.last = performance.now();
   if (!G.raf) G.raf = requestAnimationFrame(loop);
 }
@@ -1182,6 +1309,7 @@ function rankFor(s) {
 }
 /* crash → short dying beat with the Death clip, then the overlay */
 function beginDeath() {
+  musicStop();
   G.state = 'dying';
   G.deathT = DEATH_MS;
   playAction('Death', 0.10, { once:true });
@@ -1231,6 +1359,7 @@ function revive() {
   p.y = 0; p.vy = 0; p.air = false; p.slide = 0; p.inv = 2800;
   G.state = 'playing';
   playAction('Run', 0.2);
+  musicStart();
   $('ovOver').hidden = true; $('hud').hidden = false;
   $('cornerBR').classList.add('is-hidden');
   if (isTouch) $('pad').classList.add('is-on');
@@ -1241,6 +1370,7 @@ function revive() {
   if (!G.raf) G.raf = requestAnimationFrame(loop);
 }
 function toMenu() {
+  musicStop();
   G.state = 'idle';
   ['ovOver','ovPause','ovShop','ovHelp','ovScores'].forEach(id => $(id).hidden = true);
   $('ovStart').hidden = false;
@@ -1501,6 +1631,8 @@ function syncWorld(dt) {
      ahead — not the character's back — owns the frame */
   camRig.x = damp(camRig.x, p.x * S, 11, dt);
   camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
+  // self-heal: NaN or any stranded state snaps back instead of losing the player
+  if (!isFinite(camRig.x) || Math.abs(camRig.x - p.x * S) > 0.9) camRig.x = p.x * S;
   camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
   camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 7.5, 3, dt);
   if (G.shake > 0) {
@@ -1552,23 +1684,35 @@ function drawHud(dt) {
 /* =========================================================
    LOOP
    ========================================================= */
+/* The next frame is scheduled BEFORE the body runs and the body is fenced:
+   if any single frame throws, the game must keep running — a dead loop leaves
+   the canvas frozen on whatever frame happened to be up (often mid lane
+   change, player half off-screen) while the DOM HUD stays alive, which reads
+   as "the picture slid sideways and nothing works". */
+let frameErrLogged = false;
 function loop(now) {
-  G.raf = null;
-  const raw = now - G.last;
-  G.last = now;
-  const dt = clamp(raw, 0, 48);   // backgrounded tab must not teleport the bull
-  G.t += dt;
-
-  if (G.state === 'playing' || G.state === 'dying') {
-    update(dt);
-    if (G.state === 'playing' || G.state === 'dying') drawHud(dt);
-  } else {
-    G.travelled += SPEED_START * dt * 0.55;
-  }
-  poseBull(dt);
-  syncWorld(dt);
-  present();
   G.raf = requestAnimationFrame(loop);
+  try {
+    const raw = now - G.last;
+    G.last = now;
+    const dt = clamp(raw, 0, 48);  // backgrounded tab must not teleport the bull
+    G.t += dt;
+
+    if (G.state === 'playing' || G.state === 'dying') {
+      update(dt);
+      if (G.state === 'playing' || G.state === 'dying') drawHud(dt);
+    } else {
+      G.travelled += SPEED_START * dt * 0.55;
+    }
+    poseBull(dt);
+    syncWorld(dt);
+    present();
+  } catch (err) {
+    if (!frameErrLogged) {
+      frameErrLogged = true;
+      console.error('frame error (game continues):', err);
+    }
+  }
 }
 
 /* =========================================================
@@ -1664,7 +1808,8 @@ const bSound = $('bSound');
 function syncSound() { bSound.textContent = save.sound ? 'SOUND ON' : 'SOUND OFF'; }
 bSound.addEventListener('click', () => {
   save.sound = !save.sound; persist(); syncSound();
-  if (save.sound) blip(760, .07, 'square', .04);
+  if (!save.sound) musicStop();
+  else { blip(760, .07, 'square', .04); if (G.state === 'playing') musicStart(); }
 });
 syncSound();
 $('bFull').addEventListener('click', () => {
@@ -1721,5 +1866,6 @@ if (/(\?|&)debug=1\b/.test(location.search)) {
     start, pause, resume, gameOver, revive, update, poseBull, syncWorld, spawnWave,
     move, jump, slide, resize, LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S, DEATH_MS,
     ready: () => assetsReady,
+    MUSIC, musicStart, musicStop,
     render: () => present() };
 }
