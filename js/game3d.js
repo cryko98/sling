@@ -795,9 +795,9 @@ function setupBuildings() {
    jump  — DIP (short candle), RUG (rug-pull plate)
    slide — FUD (gantry), SEC (barrier with strobes)
    solid — BEAR (the bear), DUMP (candle tower), HANDS (wagon train),
-           WHALE (spans TWO lanes; its second lane is a meshless ghost) */
+           HANDS (wagon train), DUMP (candle tower) */
 const OB = { DIP:'dip', FUD:'fud', BEAR:'bear', HANDS:'hands',
-             RUG:'rug', SEC:'sec', DUMP:'dump', WHALE:'whale' };
+             RUG:'rug', SEC:'sec', DUMP:'dump' };
 
 function buildDip() {
   const g = new THREE.Group();
@@ -1008,76 +1008,11 @@ function buildDump() {
   face.position.set(0, H * 0.55, 0.56); g.add(face);
   return g;
 }
-function buildWhale() {
-  /* the whale dumps across TWO lanes — mesh sits centred between them.
-     A lathe profile gives a real whale silhouette (blunt head, tapering
-     tail); a scaled sphere just reads as a blue blob. */
-  const g = new THREE.Group();
-  const blue = toon(0x2E6BD6), pale = toon(0xBFD9F2);
-  const prof = [
-    [0.04, -2.05], [0.50, -1.82], [0.86, -1.30], [1.02, -0.50],
-    [1.04,  0.20], [0.90,  0.85], [0.62, 1.40], [0.34, 1.75],
-    [0.14,  1.98], [0.03,  2.08]
-  ].map(([r, x]) => new THREE.Vector2(r, x));
-  const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 22), blue);
-  body.rotation.z = Math.PI / 2;                 // lie across the lanes
-  body.rotation.y = Math.PI;                     // blunt head to the right
-  body.scale.set(1, 1, 0.86);
-  body.position.y = 1.04;
-  g.add(body);
-  inkOutline(body, 1.03);
-  // pale belly hugging the underside of the front half
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.9, 18, 12), pale);
-  belly.scale.set(1.9, 0.55, 0.72);
-  belly.position.set(0.35, 0.62, 0.12);
-  g.add(belly);
-  // tail flukes in a proper V
-  const tail = new THREE.Group();
-  tail.position.set(-2.02, 1.35, 0);
-  tail.rotation.z = 0.55;
-  g.add(tail);
-  [-1, 1].forEach(sd => {
-    const fluke = new THREE.Mesh(new THREE.SphereGeometry(0.46, 14, 10), blue);
-    fluke.scale.set(1.25, 0.22, 0.6);
-    fluke.position.set(sd * 0.42, 0.16, 0);
-    fluke.rotation.z = sd * 0.55;
-    tail.add(fluke);
-    inkOutline(fluke, 1.05);
-  });
-  // side fins
-  [-1, 1].forEach(sd => {
-    const fin = new THREE.Mesh(new THREE.SphereGeometry(0.30, 12, 8), blue);
-    fin.scale.set(0.9, 0.22, 0.5);
-    fin.position.set(0.55, 0.72, sd * 0.78);
-    fin.rotation.z = -0.5;
-    g.add(fin);
-  });
-  /* angry face on the player side: tilted brow, eye, frown */
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), toon(0xF5F3EC));
-  eye.position.set(1.15, 1.42, 0.80); g.add(eye);
-  const pup = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), toon(0x0A0A0C));
-  pup.position.set(1.18, 1.40, 0.90); g.add(pup);
-  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.06), toon(0x0A0A0C));
-  brow.position.set(1.15, 1.60, 0.84); brow.rotation.z = -0.45; g.add(brow);
-  const frown = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.06, 0.05), toon(0x0A0A0C));
-  frown.position.set(1.30, 1.02, 0.86); frown.rotation.z = -0.22; g.add(frown);
-  // spout splash
-  const spout = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.45, 10), pale);
-  spout.position.set(0.4, 2.3, 0); g.add(spout);
-  [-1, 0, 1].forEach(sd => {
-    const drop = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), pale);
-    drop.position.set(0.4 + sd * 0.22, 2.52 + Math.abs(sd) * -0.08, 0);
-    g.add(drop);
-  });
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 0.36),
-    new THREE.MeshBasicMaterial({ map:labelTex('WHALE', '#1B3F7A', '#9FDCFF') }));
-  face.position.set(-0.5, 1.75, 0.92); g.add(face);
-  return g;
-}
+
 
 const OB_BUILD = { [OB.DIP]:buildDip, [OB.FUD]:buildFud, [OB.BEAR]:buildBear, [OB.HANDS]:buildHands,
-                   [OB.RUG]:buildRug, [OB.SEC]:buildSec, [OB.DUMP]:buildDump, [OB.WHALE]:buildWhale };
-const obPool = { dip:[], fud:[], bear:[], hands:[], rug:[], sec:[], dump:[], whale:[] };
+                   [OB.RUG]:buildRug, [OB.SEC]:buildSec, [OB.DUMP]:buildDump };
+const obPool = { dip:[], fud:[], bear:[], hands:[], rug:[], sec:[], dump:[] };
 function obGet(kind) {
   const p = obPool[kind];
   let m = p.pop();
@@ -1163,19 +1098,20 @@ scene.add(aura);
 /* =========================================================
    CHUNK LIBRARY + SPAWNING (validated — verbatim)
    ========================================================= */
-/* same three reaction profiles as before, spread over more looks */
+/* same three reaction profiles as before, spread over more looks —
+   bears headline the show */
 const pickKind = () => {
   const r = Math.random();
-  if (r < 0.20) return OB.DIP;
-  if (r < 0.32) return OB.RUG;
-  if (r < 0.52) return OB.FUD;
-  if (r < 0.64) return OB.SEC;
-  if (r < 0.84) return OB.BEAR;
+  if (r < 0.18) return OB.DIP;
+  if (r < 0.28) return OB.RUG;
+  if (r < 0.46) return OB.FUD;
+  if (r < 0.56) return OB.SEC;
+  if (r < 0.87) return OB.BEAR;
   return OB.DUMP;
 };
-const solidKind = () => Math.random() < 0.62 ? OB.BEAR : OB.DUMP;
-const mkOb = (lane, kind, z, ghost) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ,
-  dead:false, scored:false, mesh:null, ghost:!!ghost });
+const solidKind = () => Math.random() < 0.78 ? OB.BEAR : OB.DUMP;
+const mkOb = (lane, kind, z) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ,
+  dead:false, scored:false, mesh:null });
 const mkPick = (lane, kind, z, y) => ({ lane, kind, z, y: y || 38, x:undefined, seed:Math.random()*6, mesh:null });
 
 const COIN_MS = 118;
@@ -1200,15 +1136,6 @@ const CHUNKS = [
   { id:'pinch', cost:1, gate:false, build(free) {
       return { obs:[{ lane:0, kind:solidKind(), at:0 }, { lane:2, kind:solidKind(), at:0 }],
                pick:coinLine(1, 0, 6), len:0 };
-  }},
-  { id:'whale', cost:2, gate:false, build(free) {
-      /* the whale body spans two adjacent lanes; the second lane carries a
-         meshless ghost hitbox so the pair behaves as one solid object */
-      const left = Math.random() < 0.5 ? 0 : 1;
-      const freeLane = left === 0 ? 2 : 0;
-      return { obs:[{ lane:left, kind:OB.WHALE, at:0 },
-                    { lane:left + 1, kind:OB.WHALE, at:0, ghost:true }],
-               pick:coinLine(freeLane, 0, 6), len:0 };
   }},
   { id:'double', cost:2, gate:false, build(free) {
       const obs = [];
@@ -1260,19 +1187,29 @@ function spawnWave() {
   const band = metres < 260 ? 1 : metres < 750 ? 2 : 3;
   let pool = CHUNKS.filter(c => c.cost <= band && !(G.lastGate && c.gate));
   if (!pool.length) pool = CHUNKS.filter(c => !c.gate && c.cost <= 1);
-  const chunk = pool[Math.floor(Math.random() * pool.length)];
+  let chunk = pool[Math.floor(Math.random() * pool.length)];
+  /* deep runs bias toward the denser authored chunks: draw twice, keep the
+     costlier — obstacle COUNT climbs with distance, not just speed */
+  if (metres > 900) {
+    const alt = pool[Math.floor(Math.random() * pool.length)];
+    if (alt.cost > chunk.cost) chunk = alt;
+  }
   const free = rnd3();
   const built = chunk.build(free);
   const base = G.spawnZ;
   const spd = G.speed;
   built.obs.forEach(o => G.obstacles.push(
-    mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd), o.ghost)));
+    mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd))));
   built.pick.forEach(k => G.pickups.push(
     mkPick(k.lane, k.kind, base + (k.atZ !== undefined ? k.atZ : k.at * spd), k.y)));
   G.lastGate = chunk.gate;
-  /* Space chunks by TIME, not distance — an 860ms floor clears a 633ms jump
-     plus lead with margin at any speed. */
-  const gapMs = clamp(1480 - (spd - SPEED_START) * 780, 860, 1480);
+  /* Space chunks by TIME, not distance. Distance also DENSIFIES the run: up
+     to 240ms is shaved off the gap by ~2km. The hard floor protects the
+     633ms jump lock — after a gate chunk the full 860ms stays; free chunks
+     may pack down to 760ms (633 + 95 lead + margin). */
+  const densify = Math.min(240, metres * 0.12);
+  const gapMs = clamp(1480 - (spd - SPEED_START) * 780 - densify,
+                      chunk.gate ? 860 : 760, 1480);
   const chunkZ = (built.lenZ || 0) + (built.len || 0) * spd;
   G.spawnZ = base + chunkZ + gapMs * spd + Math.random() * 180;
 }
@@ -1864,11 +1801,9 @@ function syncStream(dt) {
   }
 
   for (const o of G.obstacles) {
-    if (o.ghost || o.z > Z_SPAWN + 200) continue;   // ghosts collide, never render
+    if (o.z > Z_SPAWN + 200) continue;
     if (!o.mesh) o.mesh = obGet(o.kind);
-    // a whale's mesh sits centred between its own lane and the ghost's
-    const cx = o.kind === OB.WHALE ? LANES[o.lane] + LANE_W / 2 : LANES[o.lane];
-    o.mesh.position.set(cx * S, 0, -o.z * S);
+    o.mesh.position.set(LANES[o.lane] * S, 0, -o.z * S);
     o.mesh.visible = o.z < Z_FAR + 400;
   }
   for (const k of G.pickups) {

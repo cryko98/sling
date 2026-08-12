@@ -159,6 +159,10 @@ code{font-family:var(--font-mono)}
 .nav__links a:hover{color:var(--bone)}
 .nav__links a:hover::before{transform:scaleX(1)}
 .nav__links a.is-active{color:var(--yellow)}
+/* cross-page game link — reads as a destination, not an anchor */
+.nav__links a.nav__game{color:var(--yellow);border:1px solid rgba(255,229,0,.32)}
+.nav__links a.nav__game::before{display:none}
+.nav__links a.nav__game:hover{background:rgba(255,229,0,.12);border-color:var(--yellow)}
 .nav__right{display:flex;align-items:center;gap:.65rem}
 .nav__price{display:flex;align-items:center;gap:.45rem;font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--bone);
   padding:.45rem .7rem;border:1px solid var(--line);border-radius:100px;transition:color .3s,border-color .3s}

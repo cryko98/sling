@@ -40,23 +40,19 @@ Double-click **`serve.cmd`** instead; it starts a tiny PowerShell HTTP server on
 
 `index.html` alone does work from `file://`, since it uses classic scripts.
 
-## The Retarded Bull Run — unfinished, not part of the site
+## The Retarded Bull Run
 
-> **Status: parked.** The game is deliberately **not linked from anywhere** on
-> the site and carries `noindex`. It is kept in the repo so the work is not lost,
-> not because it is ready. Judged not good enough to ship.
->
-> Known open bug: served over HTTP the game boots straight to the
-> "RUN ENDED" overlay instead of the start screen.
->
-> The honest ceiling: the character is assembled from primitives (boxes,
-> capsules, spheres) in code. Getting to a genuinely professional-looking
-> character needs a modelled and rigged **GLTF** asset; the engine, camera,
-> physics and animation system are already in place to accept one.
+Linked from the site header and the hero (`game.html`). A full-screen 3D
+endless runner: seven obstacle kinds over three learnable dodge profiles
+(jump / slide / switch lane), authored chunk spawning with time-based gaps,
+distance-based densification, input buffering, missions, upgrades bank,
+procedural chiptune music, and a screen-space camera guard that corrects the
+view from the projected result every frame.
 
 The game page pulls Three.js via an import map from jsDelivr — the only
 third-party runtime dependency anywhere in the repo, and it never loads for
-normal site visitors.
+normal site visitors. Post-processing (bloom) is off by default for GPU
+stability; `?bloom=1` re-enables it.
 
 The character, buildings and the obstacle train are professional **CC0
 (public-domain) models** by Quaternius and Kenney — see
