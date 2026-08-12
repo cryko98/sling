@@ -1489,7 +1489,8 @@ function gameOver() {
   $('oMissions').innerHTML = done.length
     ? `<div class="rank" style="color:var(--green)">✓ ${done.length} MISSION${done.length>1?'S':''} COMPLETE · +${done.reduce((a,m)=>a+m.reward,0)} <i class="coin"></i></div>` : '';
   $('bRevive').hidden = G.revives <= 0;
-  const share = `I ran ${fmt(dist)}m as The Retarded Bull and bagged ${G.coins} $SLING 🐂\n\nbull run again.`;
+  /* the tweet must not read as a real-token claim — the coins are game points */
+  const share = `I ran ${fmt(dist)}m as The Retarded Bull and bagged ${G.coins} in-game $SLING coins 🐂 (game points only, not the real token)\n\nbull run again.`;
   $('oShare').href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(share) +
     '&url=' + encodeURIComponent(location.origin + location.pathname);
   $('hud').hidden = true;
