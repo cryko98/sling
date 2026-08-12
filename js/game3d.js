@@ -646,22 +646,6 @@ function makeLeg(sd) {
 const armL = makeArm(-1), armR = makeArm(1);
 const legL = makeLeg(-1), legR = makeLeg(1);
 
-// '$' emblem on the back of the tank — the side the camera actually sees
-{
-  const dTex = cvsTex(128, 128, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    g.font = '900 118px "Archivo Black", Impact, sans-serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.lineWidth = 16; g.strokeStyle = '#0A0A0C'; g.strokeText('$', w / 2, h / 2 + 5);
-    g.fillStyle = '#E8232A'; g.fillText('$', w / 2, h / 2 + 5);
-  });
-  const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32),
-    new THREE.MeshToonMaterial({ map:dTex, gradientMap, transparent:true }));
-  decal.position.set(0, 0.44, 0.245);
-  decal.userData.noOutline = true;
-  torso.add(decal);
-}
-
 /* ink + shadows: outline every opaque part, then let it cast.
    Collected first — inkOutline() mutates children mid-walk otherwise. */
 {
