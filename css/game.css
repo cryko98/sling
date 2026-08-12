@@ -29,9 +29,11 @@ body.gamepage {
     linear-gradient(180deg, rgba(0,0,0,.30) 0%, rgba(0,0,0,0) 22%);
   mix-blend-mode: multiply;
 }
+/* Scanlines kept barely-there: at .16 they read as display banding and
+   cheapen the bright HUD instead of grading the 3D view. */
 .grade::after {
-  content: ''; position: absolute; inset: 0; opacity: .16;
-  background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(0,0,0,.45) 3px 4px);
+  content: ''; position: absolute; inset: 0; opacity: .05;
+  background: repeating-linear-gradient(180deg, transparent 0 4px, rgba(0,0,0,.4) 4px 5px);
 }
 #gameCanvas {
   position: absolute; inset: 0;

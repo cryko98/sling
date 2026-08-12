@@ -1590,9 +1590,12 @@ function syncWorld(dt) {
 
   // chase camera: lags the lane change and leans into it
   /* Chase cam sits well back and above so the road ahead — not the bull's back —
-     owns the frame. It tracks the lane almost fully so the bull stays centred;
-     the small shortfall plus the damping is what gives the turn its weight. */
-  camRig.x = damp(camRig.x, p.x * S * 0.94, 9, dt);
+     owns the frame. It follows the lane FULLY, with a hard clamp on the lag:
+     on portrait viewports the horizontal margin is so small that even a 200ms
+     trail lets the player leave the frame. The turn's weight comes from the
+     bull banking into it, not from the camera falling behind. */
+  camRig.x = damp(camRig.x, p.x * S, 11, dt);
+  camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
   camRig.y = damp(camRig.y, 2.18 + p.y * S * 0.26 - (p.slide > 0 ? 0.20 : 0), 8, dt);
   camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 7.5, 3, dt);
   if (G.shake > 0) {
