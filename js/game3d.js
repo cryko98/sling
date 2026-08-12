@@ -8,6 +8,18 @@
    ========================================================= */
 import * as THREE from 'three';
 
+/* Bloom is what sells a neon night city — the emissive signs, coins, visor and
+   window lights all bleed light instead of sitting flat. Loaded separately and
+   guarded: if the addons fail to fetch, the game renders straight to screen. */
+let Composer = null, RenderPassC = null, BloomPass = null;
+try {
+  ({ EffectComposer: Composer } = await import('three/addons/postprocessing/EffectComposer.js'));
+  ({ RenderPass: RenderPassC }  = await import('three/addons/postprocessing/RenderPass.js'));
+  ({ UnrealBloomPass: BloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js'));
+} catch (e) {
+  console.warn('bloom unavailable, falling back to direct render', e);
+}
+
 const cv = document.getElementById('gameCanvas');
 if (!cv) throw new Error('no canvas');
 
@@ -124,7 +136,7 @@ const G = {
   shake:0, flash:0, hitFlash:0, landT:0,
   travelled:0, spawnZ:900, lastGate:false,
   obstacles:[], pickups:[],
-  player:{ lane:1, x:0, y:0, vy:0, air:false, slide:0, phase:0,
+  player:{ lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0, phase:0,
            nudge:0, inv:0, magnet:0, x2:0 },
   // animation blend weights
   wJump:0, wSlide:0
@@ -176,6 +188,19 @@ scene.fog = new THREE.Fog(0x141A38, 16, 72);
 
 const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 220);
 const camRig = { x:0, y:0, shakeX:0, shakeY:0, fov:56 };
+
+/* post chain */
+let composer = null, bloom = null;
+if (Composer && RenderPassC && BloomPass) {
+  composer = new Composer(renderer);
+  composer.addPass(new RenderPassC(scene, camera));
+  /* Threshold matters more than strength: at a low threshold everything blooms
+     and the character washes out into a glowing blob. 0.62 keeps the effect on
+     genuine light sources — lamps, windows, coins, signs — and off the bull. */
+  bloom = new BloomPass(new THREE.Vector2(1, 1), 0.55, 0.62, 0.62);
+  composer.addPass(bloom);
+}
+const present = () => composer ? composer.render() : renderer.render(scene, camera);
 
 /* ---------- lights ---------- */
 /* Neutral key — a warm key at high intensity turned the bone-white hide pink. */
@@ -341,6 +366,30 @@ const kerbs = [-1, 1].map(sd => {
 });
 
 /* =========================================================
+   ROADSIDE LAMPS
+   Regularly spaced lights streaming past are the strongest speed cue in a
+   runner — far stronger than the road texture alone.
+   ========================================================= */
+const lampGlowMat = new THREE.MeshBasicMaterial({ color:0xFFE9A0 });
+const lampPostMat = new THREE.MeshStandardMaterial({ color:0x22242E, roughness:0.6, metalness:0.4 });
+const LAMP_GAP = 9;                      // metres between lamps
+const lamps = [];
+for (let i = 0; i < 22; i++) {
+  const side = i % 2 ? 1 : -1;
+  const g = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 3.2, 10), lampPostMat);
+  post.position.y = 1.6; g.add(post);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), lampPostMat);
+  arm.position.set(-side * 0.34, 3.16, 0); g.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.24), lampGlowMat);
+  head.position.set(-side * 0.62, 3.08, 0); g.add(head);
+  g.position.set(side * (ROAD_HALF * S + 0.75), 0, -Math.floor(i / 2) * LAMP_GAP);
+  g.traverse(o => { if (o.isMesh) o.castShadow = false; });
+  scene.add(g);
+  lamps.push(g);
+}
+
+/* =========================================================
    BUILDINGS (recycled pool → real 3D parallax)
    ========================================================= */
 const bldMatA = new THREE.MeshStandardMaterial({ color:0x12D67C, roughness:0.7, emissive:0x061a10, emissiveIntensity:1 });
@@ -381,9 +430,10 @@ const MAT = {
   skinD:  new THREE.MeshStandardMaterial({ color:0xD8D2C4, roughness:0.6 }),
   horn:   new THREE.MeshStandardMaterial({ color:0xFCFAF3, roughness:0.35 }),
   ink:    new THREE.MeshStandardMaterial({ color:0x121216, roughness:0.5 }),
-  yellow: new THREE.MeshStandardMaterial({ color:0xFFE500, roughness:0.45, emissive:0x3a3400, emissiveIntensity:1 }),
+  // the bull is lit, not a light source — emissive here just feeds the bloom
+  yellow: new THREE.MeshStandardMaterial({ color:0xFFE500, roughness:0.5 }),
   navy:   new THREE.MeshStandardMaterial({ color:0x1B2559, roughness:0.6 }),
-  blue:   new THREE.MeshStandardMaterial({ color:0x1B3FE8, roughness:0.25, emissive:0x0a1650, emissiveIntensity:1 }),
+  blue:   new THREE.MeshStandardMaterial({ color:0x1B3FE8, roughness:0.25, emissive:0x060d30, emissiveIntensity:1 }),
   red:    new THREE.MeshStandardMaterial({ color:0xE8232A, roughness:0.5 }),
   muzzle: new THREE.MeshStandardMaterial({ color:0x24242C, roughness:0.55 }),
   hoof:   new THREE.MeshStandardMaterial({ color:0x17171E, roughness:0.45 }),
@@ -396,7 +446,7 @@ const visorTex = cvsTex(128, 32, (g, w, h) => {
   g.fillStyle = 'rgba(255,255,255,.28)'; g.fillRect(0, 0, w, h * 0.34);
 });
 MAT.visor = new THREE.MeshStandardMaterial({ map:visorTex, roughness:0.18, metalness:0.35,
-  emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.45 });
+  emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.22 });
 const beanieTex = cvsTex(128, 64, (g, w, h) => {
   g.fillStyle = '#121216'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#FFC800';
@@ -690,47 +740,123 @@ const pickKind = () => {
 };
 const mkOb = (lane, kind, z) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ, dead:false, scored:false, mesh:null });
 const mkPick = (lane, kind, z, y) => ({ lane, kind, z, y: y || 38, x:undefined, seed:Math.random()*6, mesh:null });
-function coinTrail(lane, n) {
-  // floated to chest height so coins read as collectibles, not road litter
-  for (let i = 0; i < n; i++) G.pickups.push(mkPick(lane, 'coin', G.spawnZ + 40 + i * 78, 62));
+/* =========================================================
+   CHUNK LIBRARY
+
+   Shipping runners stream *authored* patterns from a pool and gate them behind
+   difficulty bands, rather than rolling each obstacle independently — random
+   assembly produces noise the player cannot learn. Each chunk declares:
+
+     cost  difficulty band it unlocks in
+     gate  true if it locks the bull in a jump/slide (~630ms)
+     build returns obstacles/pickups at TIME offsets (ms), converted to
+           distance at spawn, so every internal gap stays reaction-safe
+           no matter how fast the run has become.
+   ========================================================= */
+const COIN_MS = 118;            // spacing along a coin line
+const JUMP_LOCK_MS = 900;       // safe spacing between two forced jumps
+
+const rnd3 = () => Math.floor(Math.random() * 3);
+const other = free => (free + 1 + Math.floor(Math.random() * 2)) % 3;
+function coinLine(lane, at, n, y) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ lane, kind:'coin', at: at + i * COIN_MS, y: y || 62 });
+  return out;
 }
+
+const CHUNKS = [
+  { id:'breather', cost:0, gate:false, build(free) {
+      const kinds = ['visor','magnet','x2'];
+      return { obs:[], pick:[{ lane:free, kind:kinds[rnd3()], at:180, y:56 },
+                             ...coinLine((free + 1) % 3, 0, 4)], len:300 };
+  }},
+  { id:'single', cost:1, gate:false, build(free) {
+      return { obs:[{ lane:other(free), kind:pickKind(), at:0 }],
+               pick:coinLine(free, 0, 5), len:0 };
+  }},
+  { id:'pinch', cost:1, gate:false, build(free) {
+      // both outer lanes walled, run the middle
+      return { obs:[{ lane:0, kind:OB.BEAR, at:0 }, { lane:2, kind:OB.BEAR, at:0 }],
+               pick:coinLine(1, 0, 6), len:0 };
+  }},
+  { id:'double', cost:2, gate:false, build(free) {
+      const obs = [];
+      for (let l = 0; l < 3; l++) if (l !== free) obs.push({ lane:l, kind:pickKind(), at:0 });
+      return { obs, pick:coinLine(free, 0, 6), len:0 };
+  }},
+  { id:'train', cost:2, gate:false, build(free) {
+      // 100-unit segment spacing keeps the hit windows contiguous (HIT_Z*2=104)
+      // so the lane behaves as one solid object with no phantom gap to swerve into
+      // spacing here is a DISTANCE requirement, not a timing one, so it uses atZ
+      const lane = other(free), obs = [];
+      for (let i = 0; i < 3; i++) obs.push({ lane, kind:OB.HANDS, atZ: i * 100 });
+      return { obs, pick:coinLine(free, 0, 7), lenZ:260 };
+  }},
+  { id:'gate-jump', cost:2, gate:true, build(free) {
+      const obs = [];
+      for (let l = 0; l < 3; l++) obs.push({ lane:l, kind:OB.DIP, at:0 });
+      return { obs, pick:coinLine(free, 150, 3, 96), len:0 };
+  }},
+  { id:'gate-slide', cost:2, gate:true, build(free) {
+      const obs = [];
+      for (let l = 0; l < 3; l++) obs.push({ lane:l, kind:OB.FUD, at:0 });
+      return { obs, pick:coinLine(free, 150, 3, 26), len:0 };
+  }},
+  { id:'slalom', cost:3, gate:false, build(free) {
+      // weave left-right-left; lane changes are instant so 420ms is comfortable
+      const a = rnd3(), b = (a + 1 + Math.floor(Math.random() * 2)) % 3, c = a;
+      return { obs:[{ lane:a, kind:OB.BEAR, at:0 },
+                    { lane:b, kind:OB.BEAR, at:460 },
+                    { lane:c, kind:OB.BEAR, at:920 }],
+               pick:[...coinLine((a + 1) % 3, 120, 3), ...coinLine((b + 1) % 3, 580, 3)],
+               len:920 };
+  }},
+  { id:'stairs', cost:3, gate:true, build(free) {
+      // three forced jumps, spaced past the 633ms airtime so each one lands first
+      const obs = [], pick = [];
+      for (let i = 0; i < 3; i++) {
+        const l = (free + i) % 3;
+        obs.push({ lane:l, kind:OB.DIP, at: i * JUMP_LOCK_MS });
+        pick.push({ lane:l, kind:'coin', at: i * JUMP_LOCK_MS + 60, y:96 });
+      }
+      return { obs, pick, len: 2 * JUMP_LOCK_MS };
+  }},
+  { id:'duck-run', cost:3, gate:true, build(free) {
+      // slide gate, then a wall in one lane so you must pick a side on landing
+      const obs = [];
+      for (let l = 0; l < 3; l++) obs.push({ lane:l, kind:OB.FUD, at:0 });
+      obs.push({ lane:other(free), kind:OB.BEAR, at:1050 });
+      return { obs, pick:coinLine(free, 120, 5, 26), len:1050 };
+  }}
+];
+
 function spawnWave() {
-  const free = Math.floor(Math.random() * 3);
-  // A gate forces jump/slide, locking the bull ~630ms. Two in a row is
-  // unclearable at any gap, so never follow a gate with a gate.
-  const roll = G.lastGate ? Math.random() * 0.58 : Math.random();
-  G.lastGate = false;
+  const metres = G.dist / 10;
+  // difficulty bands: ease the player in, then unlock the harder authored sets
+  const band = metres < 260 ? 1 : metres < 750 ? 2 : 3;
 
-  if (roll < 0.30) {
-    G.obstacles.push(mkOb((free + 1 + Math.floor(Math.random()*2)) % 3, pickKind()));
-    coinTrail(free, 5);
-  } else if (roll < 0.58) {
-    const kinds = [pickKind(), pickKind()]; let k = 0;
-    for (let l = 0; l < 3; l++) if (l !== free) G.obstacles.push(mkOb(l, kinds[k++]));
-    coinTrail(free, 6);
-  } else if (roll < 0.76) {
-    const kind = Math.random() < 0.5 ? OB.DIP : OB.FUD;
-    G.lastGate = true;
-    for (let l = 0; l < 3; l++) G.obstacles.push(mkOb(l, kind));
-    const y = kind === OB.DIP ? 96 : 26;
-    for (let i = 0; i < 3; i++) G.pickups.push(mkPick(free, 'coin', G.spawnZ + 130 + i * 90, y));
-  } else if (roll < 0.90) {
-    // train — 100 spacing keeps hit windows contiguous (HIT_Z*2 = 104) so the
-    // lane behaves as one solid object with no phantom gaps to swerve into
-    const lane = (free + 1 + Math.floor(Math.random()*2)) % 3;
-    for (let i = 0; i < 3; i++) G.obstacles.push(mkOb(lane, OB.HANDS, G.spawnZ + i * 100));
-    coinTrail(free, 7);
-  } else {
-    const kinds = ['visor','magnet','x2'];
-    G.pickups.push(mkPick(free, kinds[Math.floor(Math.random()*3)], G.spawnZ + 120, 56));
-    coinTrail((free + 1) % 3, 4);
-  }
+  let pool = CHUNKS.filter(c => c.cost <= band && !(G.lastGate && c.gate));
+  if (!pool.length) pool = CHUNKS.filter(c => !c.gate && c.cost <= 1);
 
-  /* Space waves by TIME, not distance. Reaction happens in milliseconds, so a
+  const chunk = pool[Math.floor(Math.random() * pool.length)];
+  const free = rnd3();
+  const built = chunk.build(free);
+  const base = G.spawnZ;
+  const spd = G.speed;
+
+  built.obs.forEach(o => G.obstacles.push(
+    mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd))));
+  built.pick.forEach(k => G.pickups.push(
+    mkPick(k.lane, k.kind, base + (k.atZ !== undefined ? k.atZ : k.at * spd), k.y)));
+
+  G.lastGate = chunk.gate;
+
+  /* Space chunks by TIME, not distance. Reaction happens in milliseconds, so a
      fixed distance gap silently shrinks the window as speed climbs. The 860ms
      floor clears a 633ms jump plus ~95ms of lead with margin. */
-  const gapMs = clamp(1480 - (G.speed - SPEED_START) * 780, 860, 1480);
-  G.spawnZ += gapMs * G.speed + Math.random() * 180;
+  const gapMs = clamp(1480 - (spd - SPEED_START) * 780, 860, 1480);
+  const chunkZ = (built.lenZ || 0) + (built.len || 0) * spd;
+  G.spawnZ = base + chunkZ + gapMs * spd + Math.random() * 180;
 }
 
 /* =========================================================
@@ -768,26 +894,66 @@ function wouldHit(kind, p) {
 function move(dir) {
   const p = G.player;
   const next = clamp(p.lane + dir, 0, 2);
-  if (next === p.lane) return;
+  if (next === p.lane) return false;      // already at the edge — nothing to buffer
   /* Refuse to swerve into something already alongside us — otherwise the player
-     is side-swiped by things they never ran into, which reads as a bug. */
+     is side-swiped by things they never ran into, which reads as a bug. The
+     intent is still valid though, so hold it briefly and retry once it clears. */
   const blocked = G.obstacles.some(o =>
     !o.dead && o.lane === next && o.z > -112 && o.z < 142 && wouldHit(o.kind, p));
-  if (blocked) { p.nudge = dir * 34; blip(140, .06, 'square', .03); return; }
+  if (blocked) {
+    p.nudge = dir * 34;                       // visible bounce, no silent no-op
+    blip(140, .06, 'square', .03);
+    return false;
+  }
   p.lane = next;
   blip(dir > 0 ? 560 : 500, .05, 'sine', .03);
+  return true;
 }
-function jump() {
+/* ---------------------------------------------------------
+   Input forgiveness.
+
+   A press that arrives a few frames early must not be swallowed — the eye
+   runs ~13ms behind reality, so players routinely hit jump just before they
+   land. Genre guidance is a 100-150ms buffer; 130ms sits in the middle and
+   is short enough that it never fires an action the player has forgotten
+   about. Every buffered action re-checks its own legality when it fires.
+
+   Lane changes are deliberately NOT buffered. A lane press only ever fails when
+   something is genuinely alongside, and that lasts ~410ms at running speed —
+   far longer than any sane buffer — so holding the intent would either do
+   nothing or fire a sideways move the player had given up on.
+   --------------------------------------------------------- */
+const BUFFER_MS = 130;
+const buf = { jump: -1e9, slide: -1e9 };
+
+function canJump() { const p = G.player; return !p.air && p.slide <= 0; }
+
+function jump(buffered) {
   const p = G.player;
-  if (p.air || p.slide > 0) return;
+  if (!canJump()) { if (!buffered) buf.jump = G.t; return false; }
   p.vy = JUMP_V; p.air = true; G.jumps++;
+  buf.jump = -1e9;
   bumpMission('jumps', 1); sfx.jump();
+  return true;
 }
-function slide() {
+function slide(buffered) {
   const p = G.player;
-  if (p.slide > 0) return;
-  if (p.air) p.vy = -JUMP_V * 0.85;
-  p.slide = SLIDE_MS; sfx.slide();
+  if (p.slide > 0) { if (!buffered) buf.slide = G.t; return false; }
+  if (p.air) p.vy = -JUMP_V * 0.85;      // slam down, then slide
+  p.slide = SLIDE_MS;
+  buf.slide = -1e9;
+  sfx.slide();
+  return true;
+}
+
+/* Replay buffered input the moment it becomes legal. */
+function drainBuffer() {
+  if (G.t - buf.jump < BUFFER_MS && canJump()) jump(true);
+  else if (G.t - buf.jump >= BUFFER_MS) buf.jump = -1e9;
+
+  if (G.t - buf.slide < BUFFER_MS && G.player.slide <= 0) slide(true);
+  else if (G.t - buf.slide >= BUFFER_MS) buf.slide = -1e9;
+
 }
 const KEYS = {
   ArrowLeft:() => move(-1), a:() => move(-1), A:() => move(-1),
@@ -914,9 +1080,10 @@ function start() {
     wJump:0, wSlide:0
   });
   Object.assign(G.player, {
-    lane:1, x:0, y:0, vy:0, air:false, slide:0, phase:0,
+    lane:1, x:0, vx:0, y:0, vy:0, air:false, slide:0, phase:0,
     nudge:0, inv:upLvl('head') * 2000, magnet:0, x2:0
   });
+  buf.jump = buf.slide = -1e9;              // no held input carries into a new run
   applyZone();
   ['ovStart','ovOver','ovPause','ovShop','ovHelp','ovScores'].forEach(id => $(id).hidden = true);
   $('hud').hidden = false;
@@ -1033,10 +1200,14 @@ function update(dt) {
     sfx.zone(); G.flash = 0.55;
   }
 
+  drainBuffer();
+
   /* Lane glide. Without this p.x never leaves 0: the logical lane changes and
      collisions follow it, but the bull and camera never move — which reads as
-     the controls being dead. */
+     the controls being dead. vx drives the strafe lean. */
+  const prevX = p.x;
   p.x = damp(p.x, LANES[p.lane], 13, dt);
+  p.vx = dt > 0 ? (p.x - prevX) / dt : 0;
   p.nudge = damp(p.nudge, 0, 9, dt);
 
   if (p.air) {
@@ -1209,12 +1380,18 @@ function poseBull(dt) {
   tailRoot.rotation.z = Math.sin(ph * 0.9) * 0.30;
   tailRoot.rotation.x = 0.25 + Math.sin(ph * 1.8) * 0.12;
 
-  // world placement
+  /* World placement. A strafe reads as motion only if the body banks and turns
+     into it — sliding sideways bolt upright looks like the model is on rails. */
   const px = (p.x + p.nudge) * S;
   bull.position.x = px;
   bull.position.y = p.y * S;
-  bull.rotation.z = damp(bull.rotation.z, -(p.nudge * S) * 0.9, 8, dt);
-  bull.rotation.y = damp(bull.rotation.y, ((p.lane - 1) * -0.10), 6, dt);
+  const strafe = clamp((p.vx || 0) * 1.05, -1, 1);        // -1..1 lateral speed
+  bull.rotation.z = damp(bull.rotation.z, -strafe * 0.34 - (p.nudge * S) * 0.5, 12, dt);
+  bull.rotation.y = damp(bull.rotation.y, strafe * 0.46, 11, dt);
+  // counter-steer the shoulders and swing the outside arm wider
+  torso.rotation.z = (torso.rotation.z || 0) + strafe * 0.12;
+  armL.shoulder.rotation.z += -strafe * 0.30;
+  armR.shoulder.rotation.z += -strafe * 0.30;
 
   // squash on landing gives the jump some weight
   const land = G.landT > 0 ? Math.sin((1 - G.landT / 160) * Math.PI) : 0;
@@ -1246,6 +1423,13 @@ function syncWorld(dt) {
 
   roadTex.offset.y = -scroll / TILE;
   kerbTex.offset.y = -scroll / 1.6;
+
+  // lamps stream past — the clearest read on how fast the bull is going
+  const lampSpan = LAMP_GAP * (lamps.length / 2);
+  for (const L of lamps) {
+    L.position.z += G.speed * dt * S;
+    if (L.position.z > 8) L.position.z -= lampSpan;
+  }
 
   // buildings recycle for genuine parallax depth
   for (const b of buildings) {
@@ -1362,7 +1546,7 @@ function loop(now) {
   }
   poseBull(dt);
   syncWorld(dt);
-  renderer.render(scene, camera);
+  present();
   G.raf = requestAnimationFrame(loop);
 }
 
@@ -1382,8 +1566,10 @@ let aspectNarrow = false;
 function resize() {
   const w = Math.max(320, cv.clientWidth || 320);
   const h = Math.max(240, cv.clientHeight || 240);
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  // bloom is fill-rate hungry; cap the ratio a little lower when it is on
+  renderer.setPixelRatio(Math.min(composer ? 1.6 : 2, window.devicePixelRatio || 1));
   renderer.setSize(w, h, false);
+  if (composer) composer.setSize(w, h);
   camera.aspect = w / h;
   // on portrait screens widen the view so all three lanes stay framed
   aspectNarrow = w / h < 1;
@@ -1490,5 +1676,5 @@ if (/(\?|&)debug=1\b/.test(location.search)) {
   window.__BULLRUN = { G, save, THREE, scene, camera, renderer, bull, start, pause, resume,
     gameOver, revive, update, poseBull, syncWorld, spawnWave, move, jump, slide, resize,
     LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S,
-    render: () => renderer.render(scene, camera) };
+    render: () => present() };
 }
