@@ -38,7 +38,9 @@ const Z_SPAWN = 2600, Z_FAR = 1900, Z_GONE = -260;
 const HIT_Z = 52, DIP_H = 52, DIP_CLR = 44, FUD_TOP = 132;
 const GRAVITY = 0.00218, JUMP_V = 0.708;      // ~633ms airtime, ~109u apex
 const SLIDE_MS = 620, BULL_H = 230;
-const SPEED_START = 0.62, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000055;
+/* Start inside the simulation-validated 0.62–1.42 band, just brisker: every
+   internal gap is expressed in time, so the fairness maths is speed-safe. */
+const SPEED_START = 0.70, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000055;
 const ZONE_M = 800;
 const DEATH_MS = 780;
 
@@ -553,6 +555,9 @@ function setupCharacter(gltf) {
   const s = 1.85 / rawH;                        // target height before widening
   const rig = new THREE.Group();
   rig.add(model);
+  /* GLTF characters are authored facing +Z — straight at the chase camera.
+     Flip the model so it faces down the road; the player sees its back. */
+  model.rotation.y = Math.PI;
   rig.scale.set(s * 1.22, s * 0.88, s * 1.22);  // wider + shorter = gym bull
   model.position.y = -bbox.min.y;
   bull.add(rig);
@@ -593,6 +598,7 @@ function setupCharacter(gltf) {
     const inv = 1 / (scl.y || 1);
     headUnit.scale.setScalar(inv * 0.85);       // the meme head is HUGE
     headUnit.position.set(0, 0.12 * inv, 0.02 * inv);
+    headUnit.rotation.y = Math.PI;              // face down the road, with the body
     bones.Head.add(headUnit);
   }
 
@@ -1399,7 +1405,7 @@ function poseBull(dt) {
   if (mixer) {
     // run cadence follows ground speed so the feet never skate
     if (actions.Run && currentAction === actions.Run)
-      actions.Run.timeScale = 0.92 * (G.speed / SPEED_START);
+      actions.Run.timeScale = 1.42 * (G.speed / SPEED_START);   // sprint, not jog
     mixer.update(dt / 1000);
     // manual jump pose layered over the mixer (the pack has no jump clip)
     if (G.wJump > 0.02) applyJumpPose(G.wJump);
