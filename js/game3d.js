@@ -540,30 +540,32 @@ const cyl = (rt, rb, h, m, seg = 14) => new THREE.Mesh(new THREE.CylinderGeometr
 const bull = new THREE.Group();
 scene.add(bull);
 
+/* Short and stacked: legs cut down, torso widened — a gym bull, not a
+   basketball player. Pelvis height = leg reach so the hooves meet the road. */
 const pelvis = new THREE.Group();
-pelvis.position.y = 1.02;
+pelvis.position.y = 0.87;
 bull.add(pelvis);
 
 /* --- torso --- */
 const torso = new THREE.Group();
 pelvis.add(torso);
 {
-  const hips  = box(0.44, 0.26, 0.32, MAT.navy);  hips.position.y = 0.02;  torso.add(hips);
-  const belt  = box(0.46, 0.06, 0.34, MAT.yellow); belt.position.y = 0.14; torso.add(belt);
-  const abs   = box(0.40, 0.30, 0.30, MAT.skin);  abs.position.y = 0.32;   torso.add(abs);
-  const chest = box(0.56, 0.36, 0.34, MAT.skin);  chest.position.y = 0.62; torso.add(chest);
+  const hips  = box(0.52, 0.26, 0.38, MAT.navy);  hips.position.y = 0.02;  torso.add(hips);
+  const belt  = box(0.54, 0.06, 0.40, MAT.yellow); belt.position.y = 0.14; torso.add(belt);
+  const abs   = box(0.50, 0.26, 0.36, MAT.skin);  abs.position.y = 0.28;   torso.add(abs);
+  const chest = box(0.72, 0.36, 0.44, MAT.skin);  chest.position.y = 0.54; torso.add(chest);
   // tank top: narrower than the shoulders so the torso tapers to the waist
-  const tank  = box(0.50, 0.54, 0.36, MAT.yellow); tank.position.y = 0.46; torso.add(tank);
-  const strapL = box(0.08, 0.20, 0.10, MAT.yellow); strapL.position.set(-0.17, 0.80, -0.11); torso.add(strapL);
-  const strapR = strapL.clone(); strapR.position.x = 0.17; torso.add(strapR);
+  const tank  = box(0.64, 0.50, 0.46, MAT.yellow); tank.position.y = 0.42; torso.add(tank);
+  const strapL = box(0.09, 0.20, 0.11, MAT.yellow); strapL.position.set(-0.22, 0.72, -0.14); torso.add(strapL);
+  const strapR = strapL.clone(); strapR.position.x = 0.22; torso.add(strapR);
   // traps + neck
-  const traps = box(0.34, 0.14, 0.28, MAT.skin); traps.position.y = 0.84; torso.add(traps);
-  const neck  = cyl(0.11, 0.13, 0.18, MAT.skin); neck.position.y = 0.94;  torso.add(neck);
+  const traps = box(0.46, 0.16, 0.34, MAT.skin); traps.position.y = 0.74; torso.add(traps);
+  const neck  = cyl(0.13, 0.15, 0.16, MAT.skin); neck.position.y = 0.84;  torso.add(neck);
 }
 
 /* --- head --- */
 const head = new THREE.Group();
-head.position.y = 1.09;
+head.position.y = 0.97;
 head.scale.setScalar(1.16);          // the head carries the identity — let it read
 torso.add(head);
 {
@@ -605,39 +607,39 @@ torso.add(head);
 /* --- limbs --- */
 function makeArm(sd) {
   const shoulder = new THREE.Group();
-  shoulder.position.set(sd * 0.32, 0.76, 0);
+  shoulder.position.set(sd * 0.38, 0.70, 0);          // wide, gym-built shoulders
   torso.add(shoulder);
-  const delt = sph(0.098, MAT.skin); shoulder.add(delt);
-  const upper = cap(0.090, 0.24, sd < 0 ? MAT.skinD : MAT.skin);
-  upper.position.y = -0.18; shoulder.add(upper);
+  const delt = sph(0.125, MAT.skin); shoulder.add(delt);
+  const upper = cap(0.115, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
+  upper.position.y = -0.17; shoulder.add(upper);
   const elbow = new THREE.Group();
-  elbow.position.y = -0.34;
+  elbow.position.y = -0.31;
   shoulder.add(elbow);
-  const fore = cap(0.078, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
-  fore.position.y = -0.16; elbow.add(fore);
-  const wrist = box(0.10, 0.06, 0.11, MAT.yellow);   // wristband reads the motion
-  wrist.position.y = -0.27; elbow.add(wrist);
-  const fist = sph(0.105, sd < 0 ? MAT.skinD : MAT.skin);
-  fist.position.y = -0.34; elbow.add(fist);
+  const fore = cap(0.098, 0.19, sd < 0 ? MAT.skinD : MAT.skin);
+  fore.position.y = -0.14; elbow.add(fore);
+  const wrist = box(0.11, 0.06, 0.12, MAT.yellow);   // wristband reads the motion
+  wrist.position.y = -0.24; elbow.add(wrist);
+  const fist = sph(0.12, sd < 0 ? MAT.skinD : MAT.skin);
+  fist.position.y = -0.30; elbow.add(fist);
   return { shoulder, elbow };
 }
 function makeLeg(sd) {
   const hip = new THREE.Group();
-  hip.position.set(sd * 0.17, -0.06, 0);
+  hip.position.set(sd * 0.20, -0.06, 0);              // wider stance
   pelvis.add(hip);
-  const thigh = cap(0.115, 0.26, sd < 0 ? MAT.skinD : MAT.skin);
-  thigh.position.y = -0.20; hip.add(thigh);
-  const short = box(0.28, 0.24, 0.30, sd < 0 ? MAT.navy : MAT.navy);
+  const thigh = cap(0.145, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
+  thigh.position.y = -0.18; hip.add(thigh);
+  const short = box(0.32, 0.24, 0.34, sd < 0 ? MAT.navy : MAT.navy);
   short.position.y = -0.06; hip.add(short);
   const knee = new THREE.Group();
-  knee.position.y = -0.40;
+  knee.position.y = -0.36;
   hip.add(knee);
-  const shin = cap(0.092, 0.26, sd < 0 ? MAT.skinD : MAT.skin);
-  shin.position.y = -0.19; knee.add(shin);
+  const shin = cap(0.115, 0.22, sd < 0 ? MAT.skinD : MAT.skin);
+  shin.position.y = -0.17; knee.add(shin);
   const ankle = new THREE.Group();
-  ankle.position.y = -0.38;
+  ankle.position.y = -0.34;
   knee.add(ankle);
-  const hoof = box(0.19, 0.11, 0.30, MAT.hoof);
+  const hoof = box(0.21, 0.12, 0.32, MAT.hoof);
   hoof.position.set(0, -0.05, -0.05); ankle.add(hoof);
   return { hip, knee, ankle };
 }
@@ -655,7 +657,7 @@ const legL = makeLeg(-1), legR = makeLeg(1);
   });
   const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32),
     new THREE.MeshToonMaterial({ map:dTex, gradientMap, transparent:true }));
-  decal.position.set(0, 0.50, 0.235);
+  decal.position.set(0, 0.44, 0.245);
   decal.userData.noOutline = true;
   torso.add(decal);
 }
@@ -1324,7 +1326,10 @@ function update(dt) {
     }
   }
   if (p.slide > 0) p.slide -= dt;
-  if (!p.air) p.phase += dt * 0.0125 * (G.speed / SPEED_START);
+  // cadence matched to ground speed: at the old rate the bull covered ~2.8m
+  // per stride cycle against a ~1.3m visual stride, so the feet skated -
+  // which the eye reads as running backwards on a treadmill
+  if (!p.air) p.phase += dt * 0.0205 * (G.speed / SPEED_START);
 
   p.inv = Math.max(0, p.inv - dt);
   p.magnet = Math.max(0, p.magnet - dt);
@@ -1435,22 +1440,32 @@ function poseBull(dt) {
   const rThighL = sinA * 0.92 - 0.10;
   const rThighR = sinB * 0.92 - 0.10;
   // knees only ever bend one way; peak just after the thigh passes back
-  const rKneeL = -clamp(-Math.sin(ph - 0.85), 0, 1) * 1.75 - 0.10;
-  const rKneeR = -clamp(-Math.sin(ph + Math.PI - 0.85), 0, 1) * 1.75 - 0.10;
+  /* One clean knee lobe per stride: bend from toe-off through the swing (heel
+     kicks up while the foot travels forward), dead straight at heel-strike and
+     through stance. This puts the foot's height a quarter-cycle out of phase
+     with its forward travel — the quadrature that makes a gait read forwards.
+     The old curve peaked with the leg straight out front: goose-stepping. */
+  const heelL = Math.max(0, -Math.sin(ph - 0.6));
+  const heelR = Math.max(0, -Math.sin(ph + Math.PI - 0.6));
+  const rKneeL = -(0.15 + heelL * 1.5);
+  const rKneeR = -(0.15 + heelR * 1.5);
   const rAnkL = clamp(Math.sin(ph + 1.2), -1, 1) * 0.34;
   const rAnkR = clamp(Math.sin(ph + Math.PI + 1.2), -1, 1) * 0.34;
   const rShL = -sinA * 0.80 + 0.18, rShR = -sinB * 0.80 + 0.18;
-  const rElL = -1.05 - Math.max(0, -sinA) * 0.45;
-  const rElR = -1.05 - Math.max(0, -sinB) * 0.45;
+  /* Elbows flex FORWARD (+x rotation drives the hanging forearm toward -z).
+     The old negative sign trailed the forearms out behind the body — arms
+     pumping backwards is the single loudest "running the wrong way" cue. */
+  const rElL = 1.15 + Math.max(0, -sinA) * 0.40;
+  const rElR = 1.15 + Math.max(0, -sinB) * 0.40;
   const bob = Math.abs(Math.sin(ph)) * 0.055;
   const hipTwist = -sinA * 0.13, torsoTwist = sinA * 0.15;
 
   /* ---- jump pose ---- */
   const jThigh = 0.95, jThigh2 = 0.25, jKnee = -1.5, jKnee2 = -0.7;
-  const jSh = -1.9, jEl = -0.5;
+  const jSh = -1.9, jEl = 0.9;
 
   /* ---- slide pose ---- */
-  const sThigh = 1.35, sKnee = -0.55, sSh = 1.25, sEl = -0.35;
+  const sThigh = 1.35, sKnee = -0.55, sSh = 1.25, sEl = 0.8;
 
   const mix3 = (r, j, s) => r * wR + j * G.wJump + s * G.wSlide;
 
@@ -1469,7 +1484,7 @@ function poseBull(dt) {
   armR.shoulder.rotation.z = -0.16 - G.wSlide * 0.25;
 
   // pelvis: bob, twist, and the slide crouch
-  pelvis.position.y = mix3(1.02 + bob, 1.00, 0.50);
+  pelvis.position.y = mix3(0.87 + bob, 0.85, 0.44);
   pelvis.rotation.y = hipTwist * wR;
   pelvis.rotation.x = mix3(0, -0.10, 0.30);
 
@@ -1596,7 +1611,9 @@ function syncWorld(dt) {
      bull banking into it, not from the camera falling behind. */
   camRig.x = damp(camRig.x, p.x * S, 11, dt);
   camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
-  camRig.y = damp(camRig.y, 2.18 + p.y * S * 0.26 - (p.slide > 0 ? 0.20 : 0), 8, dt);
+  /* High vantage: the camera looks DOWN over the bull's head, so the player
+     reads the next two waves of obstacles instead of the character's back. */
+  camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
   camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 7.5, 3, dt);
   if (G.shake > 0) {
     camRig.shakeX = (Math.random() - .5) * G.shake * 0.30;
@@ -1604,8 +1621,8 @@ function syncWorld(dt) {
   } else { camRig.shakeX = camRig.shakeY = 0; }
 
   camera.fov = camRig.fov * (aspectNarrow ? 1.24 : 1);
-  camera.position.set(camRig.x + camRig.shakeX, camRig.y + camRig.shakeY, 4.75);
-  camera.lookAt(camRig.x, 0.86 + p.y * S * 0.42, -8.0);
+  camera.position.set(camRig.x + camRig.shakeX, camRig.y + camRig.shakeY, 5.15);
+  camera.lookAt(camRig.x, 0.50 + p.y * S * 0.40, -9.5);
   camera.updateProjectionMatrix();
 
   // the shadow frustum is tight, so the key light rides along with the bull
@@ -1795,8 +1812,8 @@ G.last = performance.now();
 G.raf = requestAnimationFrame(loop);
 
 if (/(\?|&)debug=1\b/.test(location.search)) {
-  window.__BULLRUN = { G, save, THREE, scene, camera, renderer, bull, start, pause, resume,
-    gameOver, revive, update, poseBull, syncWorld, spawnWave, move, jump, slide, resize,
-    LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S,
+  window.__BULLRUN = { G, save, THREE, scene, camera, renderer, bull, legL, armL,
+    start, pause, resume, gameOver, revive, update, poseBull, syncWorld, spawnWave,
+    move, jump, slide, resize, LANES, OB, BULL_H, HIT_Z, Z_SPAWN, ZONES, S,
     render: () => present() };
 }
