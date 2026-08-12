@@ -202,6 +202,34 @@ if (Composer && RenderPassC && BloomPass) {
 }
 const present = () => composer ? composer.render() : renderer.render(scene, camera);
 
+/* =========================================================
+   TOON PIPELINE
+   The source material is a flat-colour meme with heavy black
+   linework. Chasing smooth PBR shading on primitive solids is what
+   made the character read as programmer art; quantised toon bands
+   plus inverted-hull ink outlines make the same geometry read as a
+   deliberate comic style — the way stylised runners actually ship.
+   ========================================================= */
+const gradientMap = new THREE.DataTexture(new Uint8Array([95, 160, 255]), 3, 1, THREE.RedFormat);
+gradientMap.minFilter = gradientMap.magFilter = THREE.NearestFilter;
+gradientMap.needsUpdate = true;
+
+const toon = (color, opts = {}) =>
+  new THREE.MeshToonMaterial({ color, gradientMap, ...opts });
+
+const INK = new THREE.MeshBasicMaterial({ color: 0x0A0A0C, side: THREE.BackSide });
+/* Inverted hull: a back-face copy of the mesh, slightly inflated. Cheap,
+   pool-friendly, and the exact digital equivalent of the meme's ink line.
+   Attached as a child so it inherits every joint rotation for free. */
+function inkOutline(mesh, grow = 1.05) {
+  const hull = new THREE.Mesh(mesh.geometry, INK);
+  hull.scale.setScalar(grow);
+  hull.userData.isOutline = true;
+  hull.castShadow = false;
+  mesh.add(hull);
+  return hull;
+}
+
 /* ---------- lights ---------- */
 /* Neutral key — a warm key at high intensity turned the bone-white hide pink. */
 const hemi = new THREE.HemisphereLight(0xC6D4FF, 0x1A1A26, 0.88);
@@ -221,8 +249,11 @@ scene.add(key.target);
 const fill = new THREE.DirectionalLight(0xCFDCFF, 0.50);
 fill.position.set(4.0, 3.0, 5.5);
 scene.add(fill);
+/* Rim sits LOW: with a high blue rim the warm key + blue rim mixed to pink on
+   the road's white lane dashes. Near-horizontal, it silhouettes the bull's
+   edges but barely grazes the upward-facing asphalt. */
 const rim = new THREE.DirectionalLight(0x3B6BFF, 1.15);
-rim.position.set(2.8, 2.4, -6);
+rim.position.set(2.8, 0.5, -6);
 scene.add(rim);
 const bounce = new THREE.PointLight(0xFFE500, 0.30, 8, 2);
 bounce.position.set(0, 0.5, 1.2);
@@ -246,8 +277,10 @@ function labelTex(text, bg, fg, w = 256, h = 128) {
   return cvsTex(w, h, (g) => {
     g.fillStyle = bg; g.fillRect(0, 0, w, h);
     g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, h - 12, w, 12);
-    g.font = `700 ${Math.round(h * 0.46)}px "Archivo Black", Impact, sans-serif`;
+    g.font = `900 ${Math.round(h * 0.52)}px "Archivo Black", Impact, sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = h * 0.10; g.strokeStyle = 'rgba(10,10,12,.9)'; g.lineJoin = 'round';
+    g.strokeText(text, w / 2, h / 2);
     g.fillStyle = fg; g.fillText(text, w / 2, h / 2);
   });
 }
@@ -298,6 +331,9 @@ const sunTex = cvsTex(128, 128, (g, w, h) => {
   r.addColorStop(0.25, 'rgba(255,229,0,.55)');
   r.addColorStop(1, 'rgba(255,229,0,0)');
   g.fillStyle = r; g.fillRect(0, 0, w, h);
+  // synthwave slices across the lower half
+  g.globalCompositeOperation = 'destination-out';
+  for (let y = 66; y < h; y += 13) g.fillRect(0, y, w, 3 + (y - 60) * 0.06);
 });
 const sun = new THREE.Sprite(new THREE.SpriteMaterial({
   map:sunTex, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending
@@ -352,17 +388,28 @@ ground.rotation.x = -Math.PI / 2;
 ground.position.set(0, -0.03, -40);
 scene.add(ground);
 
-/* kerbs */
-const kerbTex = cvsTex(64, 64, (g, w, h) => {
-  g.fillStyle = '#0A0A0C'; g.fillRect(0, 0, w, h);
-  g.fillStyle = '#FFE500'; g.fillRect(0, 0, w, h / 2);
-}, 1, ROAD_LEN / 1.6);
-const kerbMat = new THREE.MeshStandardMaterial({ map:kerbTex, roughness:0.7, emissive:0x100d00, emissiveIntensity:0.4 });
-const kerbs = [-1, 1].map(sd => {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.30, ROAD_LEN), kerbMat);
-  m.position.set(sd * (ROAD_W / 2 + 0.13), 0.15, road.position.z);
+/* kerbs — physically streaming segments instead of a scrolled texture.
+   A moving mesh cannot get its direction wrong the way a UV offset can. */
+const kerbYellow = toon(0xFFD500);
+const kerbBlack  = toon(0x111116);
+const KERB_LEN = 3.4, KERB_N = 18;             // per side, spans ~61m
+const kerbGeo = new THREE.BoxGeometry(0.26, 0.30, KERB_LEN);
+const kerbs = [];
+for (let i = 0; i < KERB_N * 2; i++) {
+  const side = i % 2 ? 1 : -1;
+  const idx = Math.floor(i / 2);
+  const m = new THREE.Mesh(kerbGeo, idx % 2 ? kerbYellow : kerbBlack);
+  m.position.set(side * (ROAD_W / 2 + 0.13), 0.15, -idx * KERB_LEN + 12);
   scene.add(m);
-  return m;
+  kerbs.push(m);
+}
+
+/* neon edge rails hugging the road — pure bloom fuel */
+const railMat = new THREE.MeshBasicMaterial({ color: 0xFFE500 });
+[-1, 1].forEach(sd => {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, ROAD_LEN), railMat);
+  rail.position.set(sd * (ROAD_W / 2 - 0.06), 0.015, road.position.z);
+  scene.add(rail);
 });
 
 /* =========================================================
@@ -426,33 +473,64 @@ for (let i = 0; i < 54; i++) {
    THE BULL — jointed hierarchy so the run cycle is real
    ========================================================= */
 const MAT = {
-  skin:   new THREE.MeshStandardMaterial({ color:0xF2EFE6, roughness:0.55, metalness:0.02 }),
-  skinD:  new THREE.MeshStandardMaterial({ color:0xD8D2C4, roughness:0.6 }),
-  horn:   new THREE.MeshStandardMaterial({ color:0xFCFAF3, roughness:0.35 }),
-  ink:    new THREE.MeshStandardMaterial({ color:0x121216, roughness:0.5 }),
-  // the bull is lit, not a light source — emissive here just feeds the bloom
-  yellow: new THREE.MeshStandardMaterial({ color:0xFFE500, roughness:0.5 }),
-  navy:   new THREE.MeshStandardMaterial({ color:0x1B2559, roughness:0.6 }),
-  blue:   new THREE.MeshStandardMaterial({ color:0x1B3FE8, roughness:0.25, emissive:0x060d30, emissiveIntensity:1 }),
-  red:    new THREE.MeshStandardMaterial({ color:0xE8232A, roughness:0.5 }),
-  muzzle: new THREE.MeshStandardMaterial({ color:0x24242C, roughness:0.55 }),
-  hoof:   new THREE.MeshStandardMaterial({ color:0x17171E, roughness:0.45 }),
-  tongue: new THREE.MeshStandardMaterial({ color:0xE5424E, roughness:0.6 }),
-  teeth:  new THREE.MeshStandardMaterial({ color:0xFFFDF6, roughness:0.35 })
+  skin:   toon(0xF0ECDF),
+  skinD:  toon(0xD4CEBE),
+  horn:   toon(0xFBF8EE),
+  ink:    toon(0x15151A),
+  yellow: toon(0xFFDF00),
+  navy:   toon(0x1D2660),
+  blue:   toon(0x1B3FE8, { emissive:0x0A1650, emissiveIntensity:0.8 }),
+  red:    toon(0xE8232A),
+  hoof:   toon(0x191920)
 };
 const visorTex = cvsTex(128, 32, (g, w, h) => {
   const cols = ['#FF2D2D','#FF8A00','#FFE500','#39D353','#00C2FF','#4B4BFF','#B537F2'];
   cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * w / cols.length, 0, w / cols.length + 1, h); });
   g.fillStyle = 'rgba(255,255,255,.28)'; g.fillRect(0, 0, w, h * 0.34);
 });
-MAT.visor = new THREE.MeshStandardMaterial({ map:visorTex, roughness:0.18, metalness:0.35,
+MAT.visor = new THREE.MeshToonMaterial({ map:visorTex, gradientMap,
   emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.22 });
 const beanieTex = cvsTex(128, 64, (g, w, h) => {
   g.fillStyle = '#121216'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#FFC800';
   for (let i = 0; i < 10; i++) g.fillRect(i * w / 10 + 3, 0, w / 22, h * 0.66);
 });
-MAT.beanie = new THREE.MeshStandardMaterial({ map:beanieTex, roughness:0.7 });
+MAT.beanie = new THREE.MeshToonMaterial({ map:beanieTex, gradientMap });
+
+/* The face is PAINTED, not modelled. The meme is flat vector art; a texture
+   plate carries its exact bellowing mouth, fangs, tongue and war paint far
+   better than a pile of tiny boxes ever did — and drops seven meshes. */
+const faceTex = cvsTex(256, 256, (g, w, h) => {
+  g.clearRect(0, 0, w, h);
+  const rr = (x, y, ww, hh, r) => { g.beginPath(); g.moveTo(x + r, y);
+    g.arcTo(x + ww, y, x + ww, y + hh, r); g.arcTo(x + ww, y + hh, x, y + hh, r);
+    g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + ww, y, r); g.closePath(); };
+  // red war paint on the cheek
+  g.strokeStyle = '#E8232A'; g.lineCap = 'round'; g.lineWidth = 11;
+  g.beginPath(); g.moveTo(48, 70); g.lineTo(62, 118); g.stroke();
+  g.beginPath(); g.moveTo(76, 74); g.lineTo(86, 112); g.stroke();
+  // snout patch + nostrils
+  g.fillStyle = '#26262E'; rr(70, 74, 116, 46, 20); g.fill();
+  g.strokeStyle = '#0A0A0C'; g.lineWidth = 7; rr(70, 74, 116, 46, 20); g.stroke();
+  g.fillStyle = '#06060A';
+  g.beginPath(); g.ellipse(104, 98, 9, 13, 0.3, 0, 7); g.fill();
+  g.beginPath(); g.ellipse(152, 98, 9, 13, -0.3, 0, 7); g.fill();
+  // bellowing mouth
+  g.fillStyle = '#20070D'; rr(52, 134, 152, 92, 38); g.fill();
+  g.strokeStyle = '#0A0A0C'; g.lineWidth = 9; rr(52, 134, 152, 92, 38); g.stroke();
+  // top teeth with gaps
+  g.fillStyle = '#FFFDF4'; rr(62, 138, 132, 26, 9); g.fill();
+  g.strokeStyle = 'rgba(10,10,12,.5)'; g.lineWidth = 3;
+  for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(62 + i * 26.4, 140); g.lineTo(62 + i * 26.4, 164); g.stroke(); }
+  // fangs
+  g.beginPath(); g.moveTo(66, 160); g.lineTo(92, 160); g.lineTo(79, 198); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(164, 160); g.lineTo(190, 160); g.lineTo(177, 198); g.closePath(); g.fill();
+  // tongue
+  g.fillStyle = '#E5424E';
+  g.beginPath(); g.ellipse(128, 216, 40, 26, 0, Math.PI, Math.PI * 2, false); g.closePath(); g.fill();
+  g.strokeStyle = '#AE2130'; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(128, 196); g.lineTo(128, 224); g.stroke();
+});
 
 const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
 const cap = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 6, 12), m);
@@ -490,20 +568,13 @@ head.scale.setScalar(1.16);          // the head carries the identity — let it
 torso.add(head);
 {
   const skull = box(0.50, 0.44, 0.46, MAT.skin); skull.position.y = 0.08; head.add(skull);
-  // tapered muzzle toward the camera side (+Z is behind the bull, so the face is -Z)
-  const snoutBase = box(0.34, 0.26, 0.20, MAT.skin); snoutBase.position.set(0, -0.06, -0.28); head.add(snoutBase);
-  const muzzle = box(0.24, 0.13, 0.10, MAT.muzzle); muzzle.position.set(0, 0.02, -0.40); head.add(muzzle);
-  [-1, 1].forEach(sd => {
-    const nos = sph(0.022, MAT.ink); nos.position.set(sd * 0.06, 0.03, -0.45); head.add(nos);
-  });
-  // open bellowing mouth
-  const mouth = box(0.28, 0.16, 0.12, MAT.ink); mouth.position.set(0, -0.15, -0.34); head.add(mouth);
-  const tongue = box(0.13, 0.05, 0.10, MAT.tongue); tongue.position.set(0, -0.18, -0.38); head.add(tongue);
-  const teethT = box(0.26, 0.04, 0.10, MAT.teeth); teethT.position.set(0, -0.09, -0.38); head.add(teethT);
-  [-1, 1].forEach(sd => {
-    const fang = cyl(0.001, 0.026, 0.09, MAT.teeth, 8);
-    fang.position.set(sd * 0.10, -0.14, -0.38); fang.rotation.x = Math.PI; head.add(fang);
-  });
+  // painted face plate — mouth, fangs, tongue, nostrils, war paint in one texture
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.42),
+    new THREE.MeshToonMaterial({ map:faceTex, gradientMap, transparent:true }));
+  plate.position.set(0, -0.04, -0.236);
+  plate.rotation.y = Math.PI;
+  plate.userData.noOutline = true;
+  head.add(plate);
   // rainbow visor wrapping the skull
   const visor = box(0.54, 0.11, 0.50, MAT.visor); visor.position.set(0, 0.13, -0.02); head.add(visor);
   // beanie
@@ -517,19 +588,18 @@ torso.add(head);
     hornRoot.rotation.z = sd * -0.80;
     hornRoot.rotation.x = -0.20;
     head.add(hornRoot);
-    const seg1 = cyl(0.055, 0.085, 0.26, MAT.horn, 10);
-    seg1.position.y = 0.13; hornRoot.add(seg1);
-    const seg2 = cyl(0.012, 0.055, 0.24, MAT.horn, 10);
-    seg2.position.set(0, 0.36, 0); seg2.rotation.z = sd * -0.42; hornRoot.add(seg2);
+    const seg1 = cyl(0.068, 0.10, 0.30, MAT.horn, 10);
+    seg1.position.y = 0.15; hornRoot.add(seg1);
+    const seg2 = cyl(0.014, 0.068, 0.28, MAT.horn, 10);
+    seg2.position.set(0, 0.42, 0); seg2.rotation.z = sd * -0.42; hornRoot.add(seg2);
     // ears tuck under the horns
     const ear = box(0.15, 0.065, 0.11, MAT.skin);
     ear.position.set(sd * 0.28, 0.02, 0.05); ear.rotation.z = sd * 0.40; head.add(ear);
     // blue teardrop earring
-    const er = sph(0.056, MAT.blue); er.position.set(sd * 0.30, -0.12, 0.06); head.add(er);
+    const er = sph(0.056, MAT.blue); er.position.set(sd * 0.30, -0.12, 0.06);
+    er.scale.set(1, 1.4, 1);              // teardrop, like the logo
+    head.add(er);
   });
-  // red war paint
-  const paint = box(0.03, 0.13, 0.02, MAT.red);
-  paint.position.set(-0.14, -0.04, -0.24); paint.rotation.z = 0.2; head.add(paint);
 }
 
 /* --- limbs --- */
@@ -573,8 +643,34 @@ function makeLeg(sd) {
 }
 const armL = makeArm(-1), armR = makeArm(1);
 const legL = makeLeg(-1), legR = makeLeg(1);
-// every solid part of the bull throws a real shadow
-bull.traverse(o => { if (o.isMesh) o.castShadow = true; });
+
+// '$' emblem on the back of the tank — the side the camera actually sees
+{
+  const dTex = cvsTex(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.font = '900 118px "Archivo Black", Impact, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 16; g.strokeStyle = '#0A0A0C'; g.strokeText('$', w / 2, h / 2 + 5);
+    g.fillStyle = '#E8232A'; g.fillText('$', w / 2, h / 2 + 5);
+  });
+  const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32),
+    new THREE.MeshToonMaterial({ map:dTex, gradientMap, transparent:true }));
+  decal.position.set(0, 0.50, 0.235);
+  decal.userData.noOutline = true;
+  torso.add(decal);
+}
+
+/* ink + shadows: outline every opaque part, then let it cast.
+   Collected first — inkOutline() mutates children mid-walk otherwise. */
+{
+  const meshes = [];
+  bull.traverse(o => { if (o.isMesh) meshes.push(o); });
+  for (const m of meshes) {
+    if (m.userData.isOutline || m.userData.noOutline || m.material.transparent) continue;
+    m.castShadow = true;
+    inkOutline(m, m.geometry.type === 'BoxGeometry' ? 1.045 : 1.06);
+  }
+}
 
 /* --- tail --- */
 const tailRoot = new THREE.Group();
@@ -612,7 +708,8 @@ const OB = { DIP:'dip', FUD:'fud', BEAR:'bear', HANDS:'hands' };
 function buildDip() {
   const g = new THREE.Group();
   const h = DIP_H * S;
-  const body = box(1.6, h, 0.5, new THREE.MeshStandardMaterial({ color:0xD8262C, roughness:0.5, emissive:0x2a0508, emissiveIntensity:1 }));
+  const body = box(1.6, h, 0.5, toon(0xE03038));
+  inkOutline(body, 1.035);
   body.position.y = h / 2; g.add(body);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1.5, h * 0.8),
     new THREE.MeshBasicMaterial({ map:labelTex('DIP', '#C41F25', '#ffffff'), transparent:false }));
@@ -623,14 +720,15 @@ function buildDip() {
 function buildFud() {
   const g = new THREE.Group();
   const top = FUD_TOP * S;
-  const beamMat = new THREE.MeshStandardMaterial({ color:0x3E2E74, roughness:0.6, emissive:0x150c2c, emissiveIntensity:1 });
+  const beamMat = toon(0x5A3FA6);
   const beam = box(2.1, 0.55, 0.42, beamMat);
   beam.position.y = top + 0.27; g.add(beam);
+  inkOutline(beam, 1.03);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.46),
     new THREE.MeshBasicMaterial({ map:labelTex('FUD', '#2A1C52', '#FFE500') }));
   face.position.set(0, top + 0.27, 0.22); g.add(face);
   [-1, 1].forEach(sd => {
-    const post = box(0.16, top, 0.20, new THREE.MeshStandardMaterial({ color:0x181031, roughness:0.7 }));
+    const post = box(0.16, top, 0.20, toon(0x221741));
     post.position.set(sd * 0.98, top / 2, 0); g.add(post);
   });
   return g;
@@ -638,7 +736,8 @@ function buildFud() {
 function buildBear() {
   const g = new THREE.Group();
   const h = 232 * S;
-  const body = box(1.75, h, 0.55, new THREE.MeshStandardMaterial({ color:0x5E1014, roughness:0.55 }));
+  const body = box(1.75, h, 0.55, toon(0xA31A22));
+  inkOutline(body, 1.03);
   body.position.y = h / 2; g.add(body);
   // label plane matches the texture aspect, otherwise the word gets clipped
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1.65, 0.83),
@@ -656,9 +755,10 @@ function buildBear() {
 function buildHands() {
   const g = new THREE.Group();
   const h = 190 * S;
-  const body = box(1.85, h, 1.0, new THREE.MeshStandardMaterial({ color:0xBEB8AA, roughness:0.7 }));
+  const body = box(1.85, h, 1.0, toon(0xCFC8B8));
+  inkOutline(body, 1.03);
   body.position.y = h / 2; g.add(body);
-  const win = box(1.6, 0.5, 1.02, new THREE.MeshStandardMaterial({ color:0x0D0D12, roughness:0.35, metalness:0.4 }));
+  const win = box(1.6, 0.5, 1.02, toon(0x14141A));
   win.position.y = h - 0.42; g.add(win);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.62),
     new THREE.MeshBasicMaterial({ map:labelTex('PAPER HANDS', '#9C968A', '#121216', 512, 128) }));
@@ -672,7 +772,7 @@ function obGet(kind) {
   let m = p.pop();
   if (!m) {
     m = OB_BUILD[kind]();
-    m.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    m.traverse(o => { if (o.isMesh && !o.userData.isOutline) o.castShadow = true; });
     scene.add(m);
   }
   m.visible = true;
@@ -682,27 +782,31 @@ function obFree(kind, m) { m.visible = false; obPool[kind].push(m); }
 
 /* coins */
 const coinGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.055, 20);
-const coinMat = new THREE.MeshStandardMaterial({ color:0xFFD400, roughness:0.22, metalness:0.85,
-  emissive:0x4a3c00, emissiveIntensity:1 });
+const coinMat = toon(0xFFD400, { emissive:0x574400, emissiveIntensity:0.6 });
 const coinPool = [];
 function coinGet() {
   let m = coinPool.pop();
-  if (!m) { m = new THREE.Mesh(coinGeo, coinMat); m.rotation.x = Math.PI / 2; scene.add(m); }
+  if (!m) {
+    m = new THREE.Mesh(coinGeo, coinMat);
+    m.rotation.x = Math.PI / 2;
+    inkOutline(m, 1.09);
+    scene.add(m);
+  }
   m.visible = true; return m;
 }
 function coinFree(m) { m.visible = false; coinPool.push(m); }
 
 /* power-ups */
 const puMats = {
-  visor: new THREE.MeshStandardMaterial({ map:visorTex, roughness:0.25, emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.5 }),
-  magnet: new THREE.MeshStandardMaterial({ color:0xF5F3EC, roughness:0.3, metalness:0.3, emissive:0x202020, emissiveIntensity:1 }),
-  x2: new THREE.MeshStandardMaterial({ color:0x12D67C, roughness:0.3, emissive:0x04321d, emissiveIntensity:1 })
+  visor: new THREE.MeshToonMaterial({ map:visorTex, gradientMap, emissive:0xffffff, emissiveMap:visorTex, emissiveIntensity:0.35 }),
+  magnet: toon(0xF5F3EC),
+  x2: toon(0x12D67C, { emissive:0x04321d, emissiveIntensity:0.8 })
 };
 const puGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
 const puPool = { visor:[], magnet:[], x2:[] };
 function puGet(kind) {
   let m = puPool[kind].pop();
-  if (!m) { m = new THREE.Mesh(puGeo, puMats[kind]); scene.add(m); }
+  if (!m) { m = new THREE.Mesh(puGeo, puMats[kind]); inkOutline(m, 1.06); scene.add(m); }
   m.visible = true; return m;
 }
 function puFree(kind, m) { m.visible = false; puPool[kind].push(m); }
@@ -1068,6 +1172,7 @@ function applyZone() {
   bldMatB.color.setHex(Z.bldB).multiplyScalar(0.38);
   rim.color.setHex(Z.rim);
   sun.material.color.setHex(Z.sun);
+  railMat.color.setHex(Z.sun);
 }
 function start() {
   rollMissions();
@@ -1385,17 +1490,22 @@ function poseBull(dt) {
   const px = (p.x + p.nudge) * S;
   bull.position.x = px;
   bull.position.y = p.y * S;
-  const strafe = clamp((p.vx || 0) * 1.05, -1, 1);        // -1..1 lateral speed
-  bull.rotation.z = damp(bull.rotation.z, -strafe * 0.34 - (p.nudge * S) * 0.5, 12, dt);
-  bull.rotation.y = damp(bull.rotation.y, strafe * 0.46, 11, dt);
-  // counter-steer the shoulders and swing the outside arm wider
-  torso.rotation.z = (torso.rotation.z || 0) + strafe * 0.12;
-  armL.shoulder.rotation.z += -strafe * 0.30;
-  armR.shoulder.rotation.z += -strafe * 0.30;
+  /* Bank INTO the move and face INTO the move. Sign check: the bull faces -Z,
+     and Ry(θ) sends that heading to x = -sinθ — so facing the direction of
+     travel needs θ = -strafe·k. The old +sign turned the body AGAINST the
+     strafe, which read as the character moving the wrong way. */
+  const strafe = G.state === 'playing' ? clamp((p.vx || 0) * 1.05, -1, 1) : 0;
+  bull.rotation.z = damp(bull.rotation.z, -strafe * 0.30 - (p.nudge * S) * 0.5, 12, dt);
+  bull.rotation.y = damp(bull.rotation.y, -strafe * 0.44, 11, dt);
+  torso.rotation.z += strafe * 0.10;           // shoulders counter-steer
+  armL.shoulder.rotation.z += -strafe * 0.28;
+  armR.shoulder.rotation.z += -strafe * 0.28;
 
-  // squash on landing gives the jump some weight
-  const land = G.landT > 0 ? Math.sin((1 - G.landT / 160) * Math.PI) : 0;
-  bull.scale.set(1 + land * 0.10, 1 - land * 0.14, 1 + land * 0.10);
+  // squash on landing, stretch on take-off — weight without a single keyframe
+  let sq = 0;
+  if (G.landT > 0) sq = -Math.sin((1 - G.landT / 160) * Math.PI) * 0.14;
+  else if (p.air && p.vy > 0.35) sq = 0.10;
+  bull.scale.set(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6);
 
   // real shadow maps do the grounding now; the blob only adds contact darkening
   blob.position.set(px, 0.012, 0);
@@ -1421,8 +1531,17 @@ function syncWorld(dt) {
   const p = G.player;
   const scroll = G.travelled * S;
 
-  roadTex.offset.y = -scroll / TILE;
-  kerbTex.offset.y = -scroll / 1.6;
+  /* The road pattern must stream TOWARD the camera — the same +z direction the
+     obstacles, lamps and buildings travel. With the old minus sign the ground
+     moonwalked away to the horizon while the world flew past, which players
+     read as the bull running the wrong way. Wrapped so precision holds. */
+  roadTex.offset.y = (scroll / TILE) % 1;
+
+  const kerbSpan = KERB_LEN * KERB_N;
+  for (const k of kerbs) {
+    k.position.z += G.speed * dt * S;
+    if (k.position.z > 12 + KERB_LEN) k.position.z -= kerbSpan;
+  }
 
   // lamps stream past — the clearest read on how fast the bull is going
   const lampSpan = LAMP_GAP * (lamps.length / 2);
