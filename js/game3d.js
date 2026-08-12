@@ -257,8 +257,15 @@ scene.fog = new THREE.Fog(0x141A38, 16, 72);
 const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 220);
 const camRig = { x:0, y:0, shakeX:0, shakeY:0, fov:56 };
 
+/* Post-processing is OFF by default (?bloom=1 re-enables it). WebGL errors
+   are silent: a bloom pass that corrupts on a given GPU/driver produces
+   exactly the reported "picture slid sideways" image with no exception, no
+   console error and no chip — the one failure mode no machine-independent
+   test can catch. Stability outranks glow; the neon materials are
+   full-bright emissive and carry the look on their own. */
 let composer = null, bloom = null;
-if (Composer && RenderPassC && BloomPass) {
+const WANT_BLOOM = /(\?|&)bloom=1\b/.test(location.search);
+if (WANT_BLOOM && Composer && RenderPassC && BloomPass) {
   composer = new Composer(renderer);
   composer.addPass(new RenderPassC(scene, camera));
   bloom = new BloomPass(new THREE.Vector2(1, 1), 0.55, 0.62, 0.62);
@@ -1798,12 +1805,10 @@ function syncWorld(dt) {
     }
   }
 
-  /* chase cam: full follow, hard-clamped trail; high vantage so the road
-     ahead — not the character's back — owns the frame */
-  camRig.x = damp(camRig.x, p.x * S, 11, dt);
-  camRig.x = clamp(camRig.x, p.x * S - 0.8, p.x * S + 0.8);
-  // self-heal: NaN or any stranded state snaps back instead of losing the player
-  if (!isFinite(camRig.x) || Math.abs(camRig.x - p.x * S) > 0.9) camRig.x = p.x * S;
+  /* chase cam: STATELESS lateral follow — computed fresh from the player
+     every frame, so there is no persistent value that can strand. The turn's
+     weight comes from the character banking, not from camera lag. */
+  camRig.x = isFinite(p.x) ? p.x * S : 0;
   camRig.y = damp(camRig.y, 3.05 + p.y * S * 0.24 - (p.slide > 0 ? 0.26 : 0), 8, dt);
   camRig.fov = damp(camRig.fov, 58 + (G.speed - SPEED_START) * 11, 3, dt);  // speed reads in the lens
   if (G.shake > 0) {
@@ -1915,6 +1920,8 @@ function drawHud(dt) {
    change, player half off-screen) while the DOM HUD stays alive, which reads
    as "the picture slid sideways and nothing works". */
 let frameErrLogged = false;
+const guardV = new THREE.Vector3();
+let guardHits = 0;
 function loop(now) {
   G.raf = requestAnimationFrame(loop);
   try {
@@ -1931,6 +1938,23 @@ function loop(now) {
     }
     poseBull(dt);
     syncWorld(dt);
+
+    /* Screen-space guard: verify the RESULT, not the intermediate state.
+       If the player's projected position ever leaves the middle band, snap
+       the camera onto the lane before presenting — whatever the cause, a
+       slid view can never survive a single frame. Repeated hits surface a
+       diagnostic chip so the next screenshot identifies the root cause. */
+    guardV.set(bull.position.x, 1.0, 0).project(camera);
+    if (!isFinite(guardV.x) || Math.abs(guardV.x) > 0.6) {
+      camRig.x = isFinite(G.player.x) ? G.player.x * S : 0;
+      camera.position.set(camRig.x, camRig.y || 3.05, 5.15);
+      camera.lookAt(camRig.x, 0.5, -9.5);
+      camera.updateProjectionMatrix();
+      if (++guardHits === 40) errChip('Nézet-őr aktív · ' +
+        [cv.width, cv.height, cv.clientWidth, cv.clientHeight,
+         (window.devicePixelRatio || 1).toFixed(2)].join(' / '));
+    }
+
     present();
   } catch (err) {
     if (!frameErrLogged) {
@@ -2044,6 +2068,9 @@ $('bFull').addEventListener('click', () => {
   else (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
 });
 addEventListener('resize', resize);
+/* window 'resize' misses layout-only size changes (browser zoom edge cases,
+   panel drags, DPI switches) — observe the canvas box itself */
+if ('ResizeObserver' in window) new ResizeObserver(() => resize()).observe(cv);
 addEventListener('orientationchange', () => setTimeout(resize, 120));
 document.addEventListener('fullscreenchange', () => setTimeout(resize, 120));
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
