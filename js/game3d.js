@@ -38,9 +38,10 @@ const Z_SPAWN = 2600, Z_FAR = 1900, Z_GONE = -260;
 const HIT_Z = 52, DIP_H = 52, DIP_CLR = 44, FUD_TOP = 132;
 const GRAVITY = 0.00218, JUMP_V = 0.708;      // ~633ms airtime, ~109u apex
 const SLIDE_MS = 620, BULL_H = 230;
-/* Start inside the simulation-validated 0.62–1.42 band, just brisker: every
-   internal gap is expressed in time, so the fairness maths is speed-safe. */
-const SPEED_START = 0.70, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000055;
+/* Start inside the simulation-validated 0.62–1.42 band, just brisker, and
+   ramp harder (max speed in ~85s instead of ~145s): every internal gap is
+   expressed in time, so the fairness maths is speed-safe. */
+const SPEED_START = 0.78, SPEED_MAX = 1.42, SPEED_RAMP = 0.0000075;
 const ZONE_M = 800;
 const DEATH_MS = 780;
 
@@ -50,7 +51,7 @@ const S = 1 / 110;                             // world units → metres
    ZONES
    ========================================================= */
 const ZONES = [
-  { name:'NIGHT CITY',     skyTop:0x05060F, skyBot:0x2A2044, fog:0x141A38, sun:0xFFE500, rim:0x3B6BFF, road:0x1B1B24 },
+  { name:'NIGHT CITY',     skyTop:0x070618, skyBot:0x3A2A6E, fog:0x1A2148, sun:0xFFE500, rim:0x3B6BFF, road:0x1B1B24 },
   { name:'BEAR MARKET',    skyTop:0x0A0406, skyBot:0x4A1418, fog:0x2A1014, sun:0xFF4A50, rim:0xE8232A, road:0x211618 },
   { name:'LIQUIDITY POOL', skyTop:0x02080C, skyBot:0x0B4A5E, fog:0x08303E, sun:0x00C2FF, rim:0x00C2FF, road:0x152026 },
   { name:'RAINBOW RUN',    skyTop:0x0A0414, skyBot:0x5A1C7A, fog:0x2C1044, sun:0xB537F2, rim:0xB537F2, road:0x1E1628 },
@@ -470,7 +471,7 @@ const railMat = new THREE.MeshBasicMaterial({ color: 0xFFE500 });
 });
 
 /* roadside lamps */
-const lampGlowMat = new THREE.MeshBasicMaterial({ color:0xFFE9A0 });
+const lampGlows = [0xFFE9A0, 0x8FE8FF, 0xFF9AD5].map(c => new THREE.MeshBasicMaterial({ color:c }));
 const lampPostMat = new THREE.MeshStandardMaterial({ color:0x22242E, roughness:0.6, metalness:0.4 });
 const LAMP_GAP = 9;
 const lamps = [];
@@ -481,7 +482,8 @@ for (let i = 0; i < 22; i++) {
   post.position.y = 1.6; g.add(post);
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), lampPostMat);
   arm.position.set(-side * 0.34, 3.16, 0); g.add(arm);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.24), lampGlowMat);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.24),
+    lampGlows[Math.floor(i / 2) % lampGlows.length]);   // warm / cyan / pink streets
   head.position.set(-side * 0.62, 3.08, 0); g.add(head);
   g.position.set(side * (ROAD_HALF * S + 0.75), 0, -Math.floor(i / 2) * LAMP_GAP);
   scene.add(g);
@@ -702,17 +704,27 @@ function applyJumpPose(w) {
    BUILDINGS — professional CC0 models, streamed + recycled
    ========================================================= */
 const buildings = [];
+/* every block gets its own neon accent so the street reads as a lit city,
+   not a monochrome canyon */
+const ACCENTS = [0x7C4DFF, 0x00C2B8, 0xFF5FA2, 0x3D7BFF, 0xFFB03A, 0x21D07A];
 function setupBuildings() {
   const keys = ['bld1','bld2','bld3','bld4','bld5','bld6','bld7'];
   const templates = keys.map(k => {
     const t = ASSETS[k].scene;
-    toToon(t, { color: 0x10121F, k: 0.34 });    // pull toward night palette
+    toToon(t, { color: 0x181B2E, k: 0.18 });    // gentle night pull only
     const bb = new THREE.Box3().setFromObject(t);
     return { obj: t, h: bb.max.y - bb.min.y, w: bb.max.x - bb.min.x, minY: bb.min.y };
   });
   for (let i = 0; i < 40; i++) {
     const tpl = templates[Math.floor(Math.random() * templates.length)];
     const inst = tpl.obj.clone();
+    const accent = new THREE.Color(ACCENTS[i % ACCENTS.length]);
+    inst.traverse(o => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const tinted = mats.map(m => { const c = m.clone(); c.color.lerp(accent, 0.24); return c; });
+      o.material = Array.isArray(o.material) ? tinted : tinted[0];
+    });
     const targetH = 7 + Math.random() * 20;
     const s = targetH / tpl.h;
     inst.scale.setScalar(s);
@@ -732,7 +744,13 @@ function setupBuildings() {
 /* =========================================================
    OBSTACLES
    ========================================================= */
-const OB = { DIP:'dip', FUD:'fud', BEAR:'bear', HANDS:'hands' };
+/* Eight obstacle kinds over three dodge profiles, so the reads stay learnable:
+   jump  — DIP (short candle), RUG (rug-pull plate)
+   slide — FUD (gantry), SEC (barrier with strobes)
+   solid — BEAR (the bear), DUMP (candle tower), HANDS (wagon train),
+           WHALE (spans TWO lanes; its second lane is a meshless ghost) */
+const OB = { DIP:'dip', FUD:'fud', BEAR:'bear', HANDS:'hands',
+             RUG:'rug', SEC:'sec', DUMP:'dump', WHALE:'whale' };
 
 function buildDip() {
   const g = new THREE.Group();
@@ -882,8 +900,107 @@ function setupWagon() {
   if (w > d) t.rotation.y = Math.PI / 2;
 }
 
-const OB_BUILD = { [OB.DIP]:buildDip, [OB.FUD]:buildFud, [OB.BEAR]:buildBear, [OB.HANDS]:buildHands };
-const obPool = { dip:[], fud:[], bear:[], hands:[] };
+function buildRug() {
+  /* rug pull: a flat dark plate with a rolled front edge — hop it */
+  const g = new THREE.Group();
+  const h = DIP_H * S;
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.7, h * 0.55, 1.1), toon(0x4A2C6E));
+  plate.position.set(0, h * 0.28, 0); g.add(plate);
+  inkOutline(plate, 1.04);
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.42, h * 0.42, 1.7, 14), toon(0x6E42A8));
+  roll.rotation.z = Math.PI / 2;
+  roll.position.set(0, h * 0.5, 0.55); g.add(roll);
+  inkOutline(roll, 1.05);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.30),
+    new THREE.MeshBasicMaterial({ map:labelTex('RUG', '#3A2158', '#FFB03A') }));
+  face.position.set(0, h * 0.52, 0.99); g.add(face);
+  return g;
+}
+function buildSec() {
+  /* regulator barrier: plank at slide height with strobing lights */
+  const g = new THREE.Group();
+  const top = FUD_TOP * S;
+  const plank = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.42, 0.30), toon(0x1E3A8A));
+  plank.position.y = top + 0.21; g.add(plank);
+  inkOutline(plank, 1.035);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.36),
+    new THREE.MeshBasicMaterial({ map:labelTex('SEC', '#16295F', '#F5F3EC') }));
+  face.position.set(0, top + 0.21, 0.16); g.add(face);
+  [-1, 1].forEach(sd => {
+    // A-frame legs
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, top + 0.05, 0.16), toon(0x101A3E));
+    leg.position.set(sd * 0.92, (top + 0.05) / 2, 0);
+    leg.rotation.z = sd * -0.08;
+    g.add(leg);
+    inkOutline(leg, 1.05);
+    // strobes — pure bloom bait
+    const strobe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.12),
+      new THREE.MeshBasicMaterial({ color: sd < 0 ? 0xFF4A50 : 0x4FA8FF }));
+    strobe.position.set(sd * 0.8, top + 0.50, 0);
+    g.add(strobe);
+  });
+  return g;
+}
+function buildDump() {
+  /* a tower of stacked red candles — too tall to jump, go around */
+  const g = new THREE.Group();
+  const H = 232 * S;
+  const seg = H / 3;
+  for (let i = 0; i < 3; i++) {
+    const r = 0.52 - i * 0.07;
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r + 0.05, seg * 0.94, 16),
+      toon(i % 2 ? 0xC22730 : 0x8F1B22));
+    c.position.y = seg * (i + 0.5); g.add(c);
+    inkOutline(c, 1.045);
+  }
+  const wick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8),
+    new THREE.MeshBasicMaterial({ color: 0xFF6B6F }));
+  wick.position.y = H + 0.2; g.add(wick);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.34),
+    new THREE.MeshBasicMaterial({ map:labelTex('DUMP', '#7A1016', '#ffffff') }));
+  face.position.set(0, H * 0.55, 0.56); g.add(face);
+  return g;
+}
+function buildWhale() {
+  /* the whale dumps across TWO lanes — mesh sits centred between them */
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1.0, 20, 14), toon(0x2E6BD6));
+  body.scale.set(2.15, 1.05, 0.95);
+  body.position.y = 1.05; g.add(body);
+  inkOutline(body, 1.035);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.98, 20, 14), toon(0xBFD9F2));
+  belly.scale.set(2.0, 0.72, 0.8);
+  belly.position.set(0, 0.72, 0.18); g.add(belly);
+  // tail
+  const tail = new THREE.Group();
+  tail.position.set(-2.15, 1.35, 0); tail.rotation.z = 0.5; g.add(tail);
+  [-1, 1].forEach(sd => {
+    const fluke = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), toon(0x2E6BD6));
+    fluke.scale.set(1.1, 0.35, 0.65);
+    fluke.position.set(sd * 0.34, 0.1, 0);
+    fluke.rotation.z = sd * 0.5;
+    tail.add(fluke);
+    inkOutline(fluke, 1.06);
+  });
+  // eye + grin on the player side
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), toon(0xF5F3EC));
+  eye.position.set(0.9, 1.35, 0.82); g.add(eye);
+  const pup = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), toon(0x0A0A0C));
+  pup.position.set(0.92, 1.35, 0.9); g.add(pup);
+  const grin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.05), toon(0x0A0A0C));
+  grin.position.set(0.55, 1.02, 0.9); grin.rotation.z = 0.18; g.add(grin);
+  // spout
+  const spout = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 10), toon(0x9FDCFF));
+  spout.position.set(0.3, 2.25, 0); g.add(spout);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.4),
+    new THREE.MeshBasicMaterial({ map:labelTex('WHALE', '#1B3F7A', '#9FDCFF') }));
+  face.position.set(0, 1.9, 0.95); g.add(face);
+  return g;
+}
+
+const OB_BUILD = { [OB.DIP]:buildDip, [OB.FUD]:buildFud, [OB.BEAR]:buildBear, [OB.HANDS]:buildHands,
+                   [OB.RUG]:buildRug, [OB.SEC]:buildSec, [OB.DUMP]:buildDump, [OB.WHALE]:buildWhale };
+const obPool = { dip:[], fud:[], bear:[], hands:[], rug:[], sec:[], dump:[], whale:[] };
 function obGet(kind) {
   const p = obPool[kind];
   let m = p.pop();
@@ -969,11 +1086,19 @@ scene.add(aura);
 /* =========================================================
    CHUNK LIBRARY + SPAWNING (validated — verbatim)
    ========================================================= */
+/* same three reaction profiles as before, spread over more looks */
 const pickKind = () => {
   const r = Math.random();
-  return r < 0.34 ? OB.DIP : r < 0.64 ? OB.FUD : OB.BEAR;
+  if (r < 0.20) return OB.DIP;
+  if (r < 0.32) return OB.RUG;
+  if (r < 0.52) return OB.FUD;
+  if (r < 0.64) return OB.SEC;
+  if (r < 0.84) return OB.BEAR;
+  return OB.DUMP;
 };
-const mkOb = (lane, kind, z) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ, dead:false, scored:false, mesh:null });
+const solidKind = () => Math.random() < 0.62 ? OB.BEAR : OB.DUMP;
+const mkOb = (lane, kind, z, ghost) => ({ lane, kind, z: z !== undefined ? z : G.spawnZ,
+  dead:false, scored:false, mesh:null, ghost:!!ghost });
 const mkPick = (lane, kind, z, y) => ({ lane, kind, z, y: y || 38, x:undefined, seed:Math.random()*6, mesh:null });
 
 const COIN_MS = 118;
@@ -996,8 +1121,17 @@ const CHUNKS = [
                pick:coinLine(free, 0, 5), len:0 };
   }},
   { id:'pinch', cost:1, gate:false, build(free) {
-      return { obs:[{ lane:0, kind:OB.BEAR, at:0 }, { lane:2, kind:OB.BEAR, at:0 }],
+      return { obs:[{ lane:0, kind:solidKind(), at:0 }, { lane:2, kind:solidKind(), at:0 }],
                pick:coinLine(1, 0, 6), len:0 };
+  }},
+  { id:'whale', cost:2, gate:false, build(free) {
+      /* the whale body spans two adjacent lanes; the second lane carries a
+         meshless ghost hitbox so the pair behaves as one solid object */
+      const left = Math.random() < 0.5 ? 0 : 1;
+      const freeLane = left === 0 ? 2 : 0;
+      return { obs:[{ lane:left, kind:OB.WHALE, at:0 },
+                    { lane:left + 1, kind:OB.WHALE, at:0, ghost:true }],
+               pick:coinLine(freeLane, 0, 6), len:0 };
   }},
   { id:'double', cost:2, gate:false, build(free) {
       const obs = [];
@@ -1022,9 +1156,9 @@ const CHUNKS = [
   }},
   { id:'slalom', cost:3, gate:false, build(free) {
       const a = rnd3(), b = (a + 1 + Math.floor(Math.random() * 2)) % 3, c = a;
-      return { obs:[{ lane:a, kind:OB.BEAR, at:0 },
-                    { lane:b, kind:OB.BEAR, at:460 },
-                    { lane:c, kind:OB.BEAR, at:920 }],
+      return { obs:[{ lane:a, kind:solidKind(), at:0 },
+                    { lane:b, kind:solidKind(), at:460 },
+                    { lane:c, kind:solidKind(), at:920 }],
                pick:[...coinLine((a + 1) % 3, 120, 3), ...coinLine((b + 1) % 3, 580, 3)],
                len:920 };
   }},
@@ -1055,7 +1189,7 @@ function spawnWave() {
   const base = G.spawnZ;
   const spd = G.speed;
   built.obs.forEach(o => G.obstacles.push(
-    mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd))));
+    mkOb(o.lane, o.kind, base + (o.atZ !== undefined ? o.atZ : o.at * spd), o.ghost)));
   built.pick.forEach(k => G.pickups.push(
     mkPick(k.lane, k.kind, base + (k.atZ !== undefined ? k.atZ : k.at * spd), k.y)));
   G.lastGate = chunk.gate;
@@ -1097,8 +1231,8 @@ const BUFFER_MS = 130;
 const buf = { jump: -1e9, slide: -1e9 };
 
 function wouldHit(kind, p) {
-  if (kind === OB.DIP) return p.y < DIP_CLR;
-  if (kind === OB.FUD) return !(p.slide > 0) && p.y < FUD_TOP;
+  if (kind === OB.DIP || kind === OB.RUG) return p.y < DIP_CLR;
+  if (kind === OB.FUD || kind === OB.SEC) return !(p.slide > 0) && p.y < FUD_TOP;
   return true;
 }
 function move(dir) {
@@ -1417,7 +1551,7 @@ function update(dt) {
   drainBuffer();
 
   const prevX = p.x;
-  p.x = damp(p.x, LANES[p.lane], 13, dt);
+  p.x = damp(p.x, LANES[p.lane], 15, dt);   // snappier strafe
   p.vx = dt > 0 ? (p.x - prevX) / dt : 0;
   p.nudge = damp(p.nudge, 0, 9, dt);
 
@@ -1602,9 +1736,11 @@ function syncWorld(dt) {
   }
 
   for (const o of G.obstacles) {
-    if (o.z > Z_SPAWN + 200) continue;
+    if (o.ghost || o.z > Z_SPAWN + 200) continue;   // ghosts collide, never render
     if (!o.mesh) o.mesh = obGet(o.kind);
-    o.mesh.position.set(LANES[o.lane] * S, 0, -o.z * S);
+    // a whale's mesh sits centred between its own lane and the ghost's
+    const cx = o.kind === OB.WHALE ? LANES[o.lane] + LANE_W / 2 : LANES[o.lane];
+    o.mesh.position.set(cx * S, 0, -o.z * S);
     o.mesh.visible = o.z < Z_FAR + 400;
   }
   for (const k of G.pickups) {
