@@ -226,6 +226,22 @@ is nothing to configure:
 `vercel.json` sets long-lived caching for `assets/` and sensible security
 headers. `index.html` is served uncached so updates go live immediately.
 
+### Why css/ and js/ revalidate on every load
+
+They used to be cached for an hour. Since `index.html` is uncached, a deploy
+that touched only the CSS and JS left returning visitors holding **new markup
+against an hour-old stylesheet and script** — the meme forge shipped exactly
+that way and rendered as unstyled boxes with dead controls. `max-age=3600`
+means the browser does not even ask, so no header change could rescue a cache
+already poisoned; only a changed URL can, which is what the `?v=2` on the
+`<link>` and `<script>` tags is for.
+
+They now carry `max-age=0, must-revalidate`: the browser asks every load and
+almost always gets a 304, which costs nothing on files this size and means the
+site can never be served half-updated again. Because of that, **the `?v=`
+number does not need bumping on future deploys** — it exists only to break the
+caches that were poisoned once.
+
 ## Accessibility & performance notes
 
 - Honours `prefers-reduced-motion` — the canvas, grain, scanlines and scroll
