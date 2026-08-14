@@ -163,6 +163,12 @@ code{font-family:var(--font-mono)}
 .nav__links a.nav__game{color:var(--yellow);border:1px solid rgba(255,229,0,.32)}
 .nav__links a.nav__game::before{display:none}
 .nav__links a.nav__game:hover{background:rgba(255,229,0,.12);border-color:var(--yellow)}
+/* the forge — same button weight as the game, wearing his visor */
+.nav__links a.nav__forge{color:var(--bone);border:1px solid var(--line-2);overflow:hidden}
+.nav__links a.nav__forge::before{display:none}
+.nav__links a.nav__forge::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:var(--rainbow);background-size:200% 100%;animation:rainbowSlide 6s linear infinite}
+.nav__links a.nav__forge:hover{background:rgba(245,243,236,.06);border-color:rgba(245,243,236,.35)}
 .nav__right{display:flex;align-items:center;gap:.65rem}
 .nav__price{display:flex;align-items:center;gap:.45rem;font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--bone);
   padding:.45rem .7rem;border:1px solid var(--line);border-radius:100px;transition:color .3s,border-color .3s}
@@ -478,6 +484,92 @@ code{font-family:var(--font-mono)}
 @media(max-width:1200px){.gallery{columns:3}}
 @media(max-width:820px){.gallery{columns:2}}
 @media(max-width:480px){.gallery{columns:1}}
+
+/* =========================================================
+   MEME FORGE
+   ========================================================= */
+.forge{background:radial-gradient(60% 45% at 78% 12%,rgba(255,229,0,.07),transparent 68%)}
+.forge__grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(1.4rem,3vw,2.6rem);align-items:start}
+
+/* ---- stage ---- */
+.forge__stage{position:sticky;top:110px}
+.forge__frame{position:relative;aspect-ratio:1;overflow:hidden;background:var(--ink-2);
+  border:1px solid var(--line-2);box-shadow:0 40px 100px rgba(0,0,0,.6)}
+.forge__frame img{width:100%;height:100%;object-fit:cover;display:block}
+.forge__frame.is-fresh img{animation:forgePop .6s var(--ease)}
+@keyframes forgePop{0%{transform:scale(1.1);filter:brightness(1.7) saturate(1.5)}100%{transform:scale(1);filter:none}}
+.forge__frame::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent 62%,rgba(10,10,12,.5));opacity:.7}
+
+/* the drop shadow is what keeps these readable when the forged image
+   behind them comes out bright yellow, which it often does */
+.forge__corner{position:absolute;width:22px;height:22px;border:2px solid var(--yellow);z-index:3;pointer-events:none;
+  opacity:.95;filter:drop-shadow(0 0 3px rgba(0,0,0,.9))}
+.forge__corner--tl{top:10px;left:10px;border-right:0;border-bottom:0}
+.forge__corner--tr{top:10px;right:10px;border-left:0;border-bottom:0}
+.forge__corner--bl{bottom:10px;left:10px;border-right:0;border-top:0}
+.forge__corner--br{bottom:10px;right:10px;border-left:0;border-top:0}
+
+.forge__badge{position:absolute;left:0;bottom:0;z-index:4;padding:.6rem 1rem;
+  font-family:var(--font-black);font-size:10px;letter-spacing:.18em;color:#000;background:var(--yellow)}
+.forge__badge[hidden]{display:none}
+
+.forge__busy{position:absolute;inset:0;z-index:5;display:grid;place-content:center;justify-items:center;gap:1.1rem;
+  background:rgba(10,10,12,.86);backdrop-filter:blur(4px);text-align:center;padding:2rem}
+.forge__busy[hidden]{display:none}
+.forge__spinner{width:52px;height:52px;border-radius:50%;
+  background:conic-gradient(from 0deg,#FF2D2D,#FF8A00,#FFE500,#39D353,#00C2FF,#4B4BFF,#B537F2,#FF2D2D);
+  mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 0);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 0);
+  animation:spin 1s linear infinite}
+.forge__status{margin:0;font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;color:var(--muted);max-width:26ch}
+
+.forge__actions{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:1rem;min-height:1px}
+.forge__actions [hidden]{display:none}
+
+/* ---- controls ---- */
+.forge__controls{border:1px solid var(--line-2);background:var(--ink-2);padding:clamp(1.2rem,2.4vw,1.9rem)}
+
+.forge__fuel{border:1px solid var(--line);background:rgba(255,255,255,.02);padding:.9rem 1rem;margin-bottom:1.6rem}
+.forge__fuelhead{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--muted)}
+.forge__fuelhead b{font-family:var(--font-display);font-size:1.35rem;letter-spacing:.02em;color:var(--yellow)}
+.forge__fuelbar{height:5px;background:rgba(245,243,236,.1);margin:.6rem 0 .5rem;overflow:hidden}
+.forge__fuelbar span{display:block;height:100%;width:0;background:var(--rainbow);background-size:200% 100%;
+  transition:width .6s var(--ease);animation:rainbowSlide 6s linear infinite}
+.forge__fuel.is-dry .forge__fuelbar span{background:var(--red);animation:none}
+.forge__fuelsub{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:rgba(245,243,236,.4)}
+
+.forge__label{display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.24em;color:var(--yellow);margin-bottom:.6rem}
+.forge__label--sm{color:var(--muted);margin-top:1.5rem}
+.forge__controls textarea{width:100%;resize:vertical;min-height:88px;padding:.9rem 1rem;
+  font-family:var(--font-ui);font-size:.98rem;line-height:1.5;color:var(--bone);
+  background:var(--ink);border:1px solid var(--line-2);border-radius:2px;outline:none;transition:border-color .25s}
+.forge__controls textarea:focus{border-color:var(--yellow)}
+.forge__controls textarea::placeholder{color:rgba(245,243,236,.3)}
+.forge__meta{text-align:right;margin-top:.35rem;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:rgba(245,243,236,.35)}
+
+.forge__chips{display:flex;flex-wrap:wrap;gap:.4rem}
+.forge__chip{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:.5rem .7rem;border:1px solid var(--line-2);border-radius:2px;color:rgba(245,243,236,.7);
+  transition:border-color .2s,color .2s,background .2s,transform .2s var(--ease)}
+.forge__chip:hover{border-color:var(--yellow);color:var(--yellow);background:rgba(255,229,0,.07);transform:translateY(-2px)}
+
+#fgGo{margin-top:1.6rem}
+#fgGo[disabled]{opacity:.5;cursor:not-allowed;transform:none;box-shadow:4px 4px 0 #000,4px 4px 0 1px var(--yellow)}
+.forge__msg{margin:.9rem 0 0;min-height:1.3em;font-size:.9rem;font-weight:600;color:var(--muted)}
+.forge__msg--bad{color:#FF6B6B}
+.forge__msg--good{color:var(--green)}
+.forge__note{margin:1.3rem 0 0;font-size:.8rem;line-height:1.6;color:rgba(245,243,236,.38)}
+.forge__note b{color:rgba(245,243,236,.62)}
+
+@media(max-width:940px){
+  .forge__grid{grid-template-columns:1fr}
+  .forge__stage{position:static}
+  .forge__frame{max-width:520px;margin-inline:auto}
+  .forge__actions{justify-content:center}
+}
+
 /* =========================================================
    BUY STEPS
    ========================================================= */

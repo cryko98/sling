@@ -67,6 +67,7 @@
     <a href="#creed" data-scramble>Creed</a>
     <a href="#memes" data-scramble>Memes</a>
     <a href="#buy" data-scramble>How to Buy</a>
+    <a href="#forge" class="nav__forge">MEME GEN</a>
     <a href="game.html" class="nav__game">🎮 Play</a>
   </nav>
   <div class="nav__right">
@@ -83,6 +84,7 @@
   <a href="#lore">Lore</a>
   <a href="#creed">Creed</a>
   <a href="#memes">Memes</a>
+  <a href="#forge">Meme Forge</a>
   <a href="#buy">How to Buy</a>
   <a href="game.html">🎮 Play the Bull Run</a>
   <div class="mobilemenu__soc">
@@ -420,11 +422,79 @@
   </div>
 </section>
 
+<!-- ============ FORGE ============ -->
+<section class="section forge" id="forge">
+  <div class="wrap">
+    <header class="shead reveal">
+      <span class="shead__num">05</span>
+      <h2 class="shead__title">THE <span class="txt-rainbow">FORGE</span></h2>
+      <p class="shead__sub">Put <b>the same bull</b> anywhere. Type a scene, the forge draws him into it — beanie, rainbow visor, teardrop earrings and all. Fuel is limited, so spend it well.</p>
+    </header>
+
+    <div class="forge__grid reveal">
+
+      <!-- ---- stage ---- -->
+      <div class="forge__stage">
+        <div class="forge__frame" id="fgFrame">
+          <img id="fgImg" src="assets/logo.jpg" alt="The forged $SLING meme" width="512" height="512">
+          <span class="forge__corner forge__corner--tl"></span>
+          <span class="forge__corner forge__corner--tr"></span>
+          <span class="forge__corner forge__corner--bl"></span>
+          <span class="forge__corner forge__corner--br"></span>
+          <span class="forge__badge" id="fgBadge" hidden>FRESH OFF THE ANVIL</span>
+          <div class="forge__busy" id="fgBusy" hidden>
+            <span class="forge__spinner"></span>
+            <p class="forge__status" id="fgStatus">Heating the anvil…</p>
+          </div>
+        </div>
+
+        <div class="forge__actions">
+          <a class="btn btn--yellow btn--sm magnetic" id="fgSave" download="sling-meme.jpg" hidden>SAVE IT</a>
+          <a class="btn btn--dark btn--sm magnetic" id="fgTweet" target="_blank" rel="noopener" hidden>SHARE ON X</a>
+          <button class="btn btn--ghost btn--sm magnetic" id="fgRetry" hidden>REROLL</button>
+          <button class="btn btn--ghost btn--sm magnetic" id="fgReset" hidden>RESET</button>
+        </div>
+      </div>
+
+      <!-- ---- controls ---- -->
+      <div class="forge__controls">
+        <div class="forge__fuel" id="fgFuel">
+          <div class="forge__fuelhead">
+            <span>YOUR FUEL TODAY</span>
+            <b id="fgFuelVal">—</b>
+          </div>
+          <div class="forge__fuelbar"><span id="fgFuelFill" style="width:0%"></span></div>
+          <div class="forge__fuelsub" id="fgFuelSub">checking the tank…</div>
+        </div>
+
+        <label class="forge__label" for="fgPrompt">WHERE DOES HE RUN?</label>
+        <textarea id="fgPrompt" maxlength="180" rows="3" spellcheck="false"
+          placeholder="riding a rocket past the moon, holding a flag"></textarea>
+        <div class="forge__meta"><span id="fgCount">0</span> / 180</div>
+
+        <span class="forge__label forge__label--sm">OR STEAL ONE · RELOAD FOR MORE</span>
+        <div class="forge__chips" id="fgChips"></div>
+
+        <button class="btn btn--yellow btn--lg btn--full magnetic" id="fgGo">FORGE THE MEME</button>
+        <p class="forge__msg" id="fgMsg" role="status" aria-live="polite"></p>
+
+        <p class="forge__note">
+          Drawn by <b>fal.ai</b>, using the $SLING logo and the archive as the character
+          reference, so it is always <b>him</b> — not a bull that looks a bit like him.
+          The forge runs on a shared fuel tank, a handful of memes per visitor per day,
+          so there is some left for the next degen. Refills at 00:00 UTC.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
 <!-- ============ BUY ============ -->
 <section class="section buy" id="buy">
   <div class="wrap">
     <header class="shead reveal">
-      <span class="shead__num">05</span>
+      <span class="shead__num">06</span>
       <h2 class="shead__title">HOW TO <span class="txt-rainbow">BUY</span></h2>
       <p class="shead__sub">Four steps between you and maximum conviction.</p>
     </header>

@@ -18,18 +18,22 @@ A single-page static site. **No build step, no dependencies, no framework** — 
 ```
 index.html          the site — no game code ships here
 css/style.css       site styling + animation
-js/main.js          site effects + live market engine
+js/main.js          site effects, live market engine, meme forge client
 assets/             logo, favicons, meme archive
-vercel.json         caching + security headers
+vercel.json         caching + security headers, function config
 serve.cmd           double-click for a local preview server
 tools/serve.ps1     the server itself (pure PowerShell, nothing to install)
 
-game.html           UNFINISHED, unlinked — see below
+api/meme.js         the ONLY server-side code — the fal.ai meme forge
+.env.example        every env var it reads, with defaults
+
+game.html           the Retarded Bull Run — linked from the header and hero
 css/game.css
 js/game3d.js
 ```
 
-The site is dependency-free vanilla HTML/CSS/JS.
+The site itself is dependency-free vanilla HTML/CSS/JS. The one piece
+that is not static is `api/meme.js`, a single Vercel serverless function.
 
 ## Local preview
 
@@ -115,6 +119,71 @@ auto-player stepping the real game logic: **12/12 runs survive 5 minutes at
 maximum speed**, and all seven obstacle/pose collision rules behave. Append
 `?debug=1` to expose `window.__BULLRUN` for that kind of simulation; it is
 absent otherwise.
+
+## The Meme Forge
+
+Section 05 of the site. A visitor types a scene — *"as a viking on a
+longship in a storm"* — and gets back a meme of **the same bull**, drawn
+by [fal.ai](https://fal.ai)'s `nano-banana` image-edit model.
+
+The fal key lives only on the server. `api/meme.js` uses fal's **queue**
+API rather than the synchronous one, so every function call returns in
+well under a second: `POST` hands the job over and returns a request id,
+the browser polls `GET ?id=…` until it is done. A synchronous call would
+sit there for 10-25s and blow past the serverless timeout. Finished
+images are inlined as base64 data URLs, so the browser never talks to
+fal's CDN and the save button works without a cross-origin fetch.
+
+### Keeping him the same bull
+
+The model gets two reference images with every request — `logo.jpg` for
+his face and `stadium.jpg` for his build and colouring — plus a written
+lock transcribed from the existing archive: the striped beanie, the
+rainbow visor, the blue teardrop earrings, the red cheek streaks, the
+open roaring mouth, the bodybuilder frame. Pose, clothing, camera and
+setting are free; those features are not. Each "never" in that prompt is
+a drift the model tries on its own — dropping the visor because the
+scene is dark, swapping the beanie for a helmet, sliding toward
+photorealism.
+
+### The credit fence
+
+Generating costs real money, so the budget is fenced on five sides. All
+of it is server-side, because anything in the browser is a suggestion:
+
+| Guard | Default | Env var |
+|---|---|---|
+| Everyone, per UTC day | 60 images | `MEME_DAILY_LIMIT` |
+| One visitor, per UTC day | 6 images | `MEME_IP_DAILY` |
+| One visitor, burst | 2 per 3 min | `MEME_BURST` / `MEME_BURST_MIN` |
+| Running at once, site-wide | 4 jobs | `MEME_INFLIGHT` |
+| Calls from other sites | rejected | `MEME_STRICT_ORIGIN` |
+| Images per generation | 1 | `MEME_IMAGES` |
+| Kill switch | on | `MEME_ENABLED` |
+
+At the defaults, nano-banana's ~$0.04 an image caps a very bad day at
+about **$2.40**. Every dial is an env var, so tightening the budget is a
+dashboard change, not a deploy. A refusal never reaches fal, and a job
+fal rejects hands its slot straight back.
+
+The page adds its own polite layer on top — a per-browser day counter, a
+visible fuel gauge and a 25s cooldown on the button — which is what
+stops ordinary use from draining the tank. It is bypassable and is not
+counted on; the server is what actually protects the credit.
+
+**The one caveat:** without a Redis store the daily counters live in the
+serverless instance's memory, so several warm instances each keep their
+own tally and the real total can overshoot `MEME_DAILY_LIMIT`. Attaching
+a Vercel KV or Upstash store (just set its env vars — the code picks
+either pair up automatically) moves both daily counters there and makes
+the cap exact. Everything else works identically either way.
+
+### Setup
+
+Set `FAL_KEY` in the Vercel dashboard. That is the only required
+variable; see `.env.example` for the rest, all of which have defaults.
+The forge is the only part of the site that needs the deployment — on a
+local static server it says so instead of failing silently.
 
 ## Live market data
 

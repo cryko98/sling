@@ -909,6 +909,331 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { render(); fetchMarket(); }
 });
 
+/* =========================================================
+   THE MEME FORGE
+
+   Talks to /api/meme, which holds the fal.ai key and does the real
+   rationing. Everything in here is the polite half: it shows how much
+   fuel is left, keeps a per-browser day counter of its own, and puts a
+   cooldown on the button so nobody can lean on it. All of that is
+   trivially bypassable — the server is what actually protects the
+   credit — but it is what stops normal use from draining the tank, and
+   a visible limit changes how people spend it.
+   ========================================================= */
+{
+  /* Kept short on purpose — a long chip wraps to its own row and the
+     whole section stretches. Only CHIP_COUNT of them are shown, picked
+     fresh each visit, so the list stays tight without going stale. */
+  const SCENES = [
+    'riding a rocket to the moon',
+    'as a gladiator in the Colosseum',
+    'surfing a giant green candle',
+    'in a Lamborghini at sunset',
+    'as a samurai in cherry blossom',
+    'in a boxing ring, gloves up',
+    'as a king on a golden throne',
+    'on the trading floor',
+    'as a viking in a storm',
+    'buried in poker chips',
+    'in a fighter jet cockpit',
+    'as a DJ in a neon club',
+    'on a snowy summit at dawn',
+    'walking from a burning city',
+    'planting a flag on the moon'
+  ];
+  const CHIP_COUNT = 6;
+
+  const WAIT_LINES = [
+    'Heating the anvil…',
+    'The bull is getting into character…',
+    'Drawing the horns first…',
+    'Arguing about the visor…',
+    'Adding an unreasonable amount of contrast…',
+    'Almost. He is flexing.'
+  ];
+
+  const BASE_IMG   = 'assets/logo.jpg';
+  const LOCAL_KEY  = 'sling.forge.v1';
+  const LOCAL_DAILY = 6;          // per browser, per UTC day
+  const COOLDOWN_MS = 25000;      // between two forges in this tab
+  const MAX_POLLS   = 60;         // 60 x 1.6s ≈ 96s of patience
+
+  const el = id => document.getElementById(id);
+  const frame  = el('fgFrame'), img = el('fgImg'), busy = el('fgBusy'),
+        status = el('fgStatus'), badge = el('fgBadge'),
+        save   = el('fgSave'), tweet = el('fgTweet'),
+        retry  = el('fgRetry'), reset = el('fgReset'),
+        prompt = el('fgPrompt'), count = el('fgCount'), chips = el('fgChips'),
+        go     = el('fgGo'), msg = el('fgMsg'),
+        fuel   = el('fgFuel'), fuelVal = el('fgFuelVal'),
+        fuelFill = el('fgFuelFill'), fuelSub = el('fgFuelSub');
+
+  if (go) {
+
+  let running = false, cooldownUntil = 0, cooldownTimer = 0;
+  let serverLeft = null;          // the shared tank, as the server sees it
+  let serverCap = null;           // and what it says a visitor's day is worth
+  let quotaAsked = false;
+
+  const utcDay = () => new Date().toISOString().slice(0, 10);
+
+  /* ---- per-browser day counter ---- */
+  function local() {
+    let s;
+    try { s = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null'); } catch { s = null; }
+    if (!s || s.day !== utcDay()) s = { day: utcDay(), used: 0 };
+    return s;
+  }
+  function localBump() {
+    const s = local();
+    s.used += 1;
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(s)); } catch {}
+    return s;
+  }
+  const localLeft = () => Math.max(0, LOCAL_DAILY - local().used);
+
+  /* ---- fuel gauge ---- */
+  function paintFuel() {
+    const cap  = Math.min(LOCAL_DAILY, serverCap === null ? LOCAL_DAILY : serverCap);
+    const left = Math.min(cap, serverLeft === null ? localLeft() : Math.min(localLeft(), serverLeft));
+    fuelVal.textContent = left + ' / ' + cap;
+    fuelFill.style.width = clamp((left / cap) * 100, 0, 100) + '%';
+    fuel.classList.toggle('is-dry', left <= 0);
+
+    fuelSub.textContent = left <= 0
+      ? 'tank empty — it refills at 00:00 UTC'
+      : left === 1
+        ? 'one shot left. make it count.'
+        : left + ' memes left today';
+
+    if (left <= 0 && !running) {
+      go.disabled = true;
+      go.textContent = 'OUT OF FUEL';
+    } else if (!running && Date.now() >= cooldownUntil) {
+      go.disabled = false;
+      go.textContent = 'FORGE THE MEME';
+    }
+  }
+
+  /* Ask the server what is left. Deferred until the section is actually
+     looked at, so a visitor who never scrolls here costs nothing. */
+  function askQuota() {
+    if (quotaAsked) return;
+    quotaAsked = true;
+    fetch('/api/meme')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        if (d.enabled === false) {
+          go.disabled = true;
+          go.textContent = 'FORGE CLOSED';
+          say('The forge is closed for maintenance. Back soon.');
+          return;
+        }
+        if (typeof d.ipDaily === 'number') serverCap = d.ipDaily;
+        if (typeof d.ipLeft === 'number') {
+          serverLeft = Math.min(d.ipLeft, typeof d.left === 'number' ? d.left : d.ipLeft);
+        }
+        paintFuel();
+      })
+      .catch(() => {});   // offline / static preview — the local counter stands in
+  }
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => {
+      if (es.some(e => e.isIntersecting)) { askQuota(); io.disconnect(); }
+    }, { rootMargin: '200px' });
+    io.observe(document.getElementById('forge'));
+  } else {
+    askQuota();
+  }
+
+  /* ---- ui helpers ---- */
+  function say(text, kind) {
+    msg.textContent = text || '';
+    msg.className = 'forge__msg' + (kind ? ' forge__msg--' + kind : '');
+  }
+
+  function setBusy(on) {
+    running = on;
+    busy.hidden = !on;
+    go.disabled = on;
+    if (on) go.textContent = 'FORGING…';
+    else paintFuel();
+  }
+
+  function startCooldown() {
+    cooldownUntil = Date.now() + COOLDOWN_MS;
+    clearInterval(cooldownTimer);
+    cooldownTimer = setInterval(() => {
+      const s = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      if (s <= 0) { clearInterval(cooldownTimer); paintFuel(); return; }
+      if (running || localLeft() <= 0) return;
+      go.disabled = true;
+      go.textContent = 'COOLING DOWN · ' + s + 's';
+    }, 250);
+  }
+
+  /* ---- chips ---- */
+  const pool = SCENES.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  pool.slice(0, CHIP_COUNT).forEach(scene => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'forge__chip';
+    b.textContent = scene;
+    b.addEventListener('click', () => {
+      prompt.value = scene;
+      prompt.dispatchEvent(new Event('input'));
+      prompt.focus();
+    });
+    chips.appendChild(b);
+  });
+
+  prompt.addEventListener('input', () => { count.textContent = prompt.value.length; });
+  prompt.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') forge();
+  });
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  /* The API always answers JSON. Anything else means we are not on the
+     deployed site — opened from file://, or a plain static server. */
+  const readJson = res => res.text().then(t => {
+    try { return JSON.parse(t); } catch { throw new Error('OFFLINE'); }
+  });
+
+  function slug(text) {
+    return (text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)) || 'meme';
+  }
+
+  /* ---- the main event ---- */
+  function forge() {
+    if (running) return;
+
+    const text = prompt.value.replace(/\s+/g, ' ').trim();
+    if (!text) {
+      say('Tell the bull where to go first.', 'bad');
+      prompt.focus();
+      return;
+    }
+    if (localLeft() <= 0) {
+      say('That is your ' + LOCAL_DAILY + ' for today. The tank refills at 00:00 UTC.', 'bad');
+      return;
+    }
+    if (Date.now() < cooldownUntil) {
+      say('Give it ' + Math.ceil((cooldownUntil - Date.now()) / 1000) + ' more seconds.', 'bad');
+      return;
+    }
+
+    setBusy(true);
+    say('');
+    badge.hidden = true;
+
+    let line = 0;
+    status.textContent = WAIT_LINES[0];
+    const ticker = setInterval(() => {
+      line = (line + 1) % WAIT_LINES.length;
+      status.textContent = WAIT_LINES[line];
+    }, 3400);
+
+    const done = () => { clearInterval(ticker); setBusy(false); };
+
+    fetch('/api/meme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: text })
+    })
+      .then(res => readJson(res).then(data => {
+        if (!res.ok) {
+          // the server refused — trust its numbers over ours
+          if (typeof data.ipLeft === 'number') { serverLeft = data.ipLeft; paintFuel(); }
+          throw new Error(data.error || 'The forge said no.');
+        }
+        if (!data.requestId) throw new Error('The forge said nothing at all.');
+        if (typeof data.ipLeft === 'number') serverLeft = data.ipLeft;
+        localBump();
+        paintFuel();
+        return data.requestId;
+      }))
+      .then(id => {
+        let tries = 0;
+        const check = () => {
+          if (++tries > MAX_POLLS) throw new Error('That one is taking far too long. Try again.');
+          return sleep(1600)
+            .then(() => fetch('/api/meme?id=' + encodeURIComponent(id)))
+            .then(readJson)
+            .then(data => {
+              if (data.status === 'COMPLETED') {
+                const list = data.images || [];
+                if (!list.length) throw new Error('It came back empty.');
+                return list[0];
+              }
+              if (data.status === 'ERROR' || data.error) {
+                throw new Error(data.error || 'That one did not survive the forge.');
+              }
+              return check();
+            });
+        };
+        return check();
+      })
+      .then(src => {
+        done();
+        img.src = src;
+        img.alt = 'The $SLING bull ' + text;
+
+        save.href = src;
+        save.download = 'sling-' + slug(text) + '.jpg';
+        save.hidden = false;
+
+        tweet.href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(
+          'Forged this in The Retarded Bull meme forge 🤡 🐂\n\n' +
+          '"' + text + '"\n\n' +
+          'Make your own: https://www.theslingbull.fun/#forge'
+        );
+        tweet.hidden = false;
+
+        retry.hidden = false;
+        reset.hidden = false;
+        badge.hidden = false;
+
+        frame.classList.remove('is-fresh');
+        void frame.offsetWidth;
+        frame.classList.add('is-fresh');
+
+        say('There he is. Save it, post it, never sell.', 'good');
+        startCooldown();
+      })
+      .catch(err => {
+        done();
+        const offline = !err || err.message === 'OFFLINE' || err.name === 'TypeError';
+        say(offline
+          ? 'The forge only runs on the live site — it needs the server half.'
+          : err.message || 'Something went wrong. Try again.', 'bad');
+      });
+  }
+
+  go.addEventListener('click', forge);
+  retry.addEventListener('click', forge);
+
+  reset.addEventListener('click', () => {
+    img.src = BASE_IMG;
+    img.alt = 'The forged $SLING meme';
+    save.hidden = tweet.hidden = retry.hidden = reset.hidden = true;
+    badge.hidden = true;
+    prompt.value = '';
+    prompt.dispatchEvent(new Event('input'));
+    say('');
+  });
+
+  paintFuel();
+
+  }
+}
+
 /* year */
 $('#year').textContent = new Date().getFullYear();
 
