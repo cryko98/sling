@@ -519,6 +519,101 @@ function animateNum(el, to, formatter, dur = 700) {
   })(t0);
 }
 
+/* =========================================================
+   MILESTONE LADDER
+
+   The bar measures from the PREVIOUS milestone to the next, not from
+   zero. Measured from zero it would crawl slower at every level — at
+   $10M the run to $25M would look like a full bar barely moving — and
+   the whole point is that it visibly does something.
+   ========================================================= */
+const MILESTONES = [100e3, 250e3, 500e3, 1e6, 2.5e6, 5e6, 10e6, 25e6,
+                    50e6, 100e6, 250e6, 500e6, 1e9];
+
+const fmtMilestone = n => {
+  if (n >= 1e9) return '$' + (n / 1e9) + 'B';
+  if (n >= 1e6) return '$' + (n / 1e6) + 'M';
+  return '$' + (n / 1e3) + 'K';
+};
+
+/* how many rungs are behind us — null until the first real reading, so
+   opening the page on an already-cleared level does not fire confetti */
+let msCleared = null;
+let msLadderBuilt = false;
+
+function renderMilestone(mc) {
+  if (!isFinite(mc) || mc <= 0) return;
+
+  const idx = MILESTONES.findIndex(m => mc < m);   // -1 once every rung is behind us
+  const done = idx === -1 ? MILESTONES.length : idx;
+  const target = idx === -1 ? null : MILESTONES[idx];
+  const floor = done === 0 ? 0 : MILESTONES[done - 1];
+
+  if (target === null) {
+    $('#msEyebrow').textContent = 'EVERY STOP CLEARED';
+    $('#msTarget').textContent  = 'THE MOON';
+    $('#msPct').textContent     = '∞';
+    $('#msFill').style.width    = '100%';
+    $('#msNow').textContent     = fmtCompact(mc);
+    $('#msToGo').textContent    = 'NOTHING';
+  } else {
+    const pct = clamp(((mc - floor) / (target - floor)) * 100, 0, 100);
+    $('#msEyebrow').textContent = 'NEXT STOP';
+    $('#msTarget').textContent  = fmtMilestone(target) + ' MARKET CAP';
+    $('#msPct').textContent     = pct.toFixed(1) + '%';
+    $('#msFill').style.width    = pct + '%';
+    $('#msNow').textContent     = fmtCompact(mc);
+    $('#msToGo').textContent    = fmtCompact(target - mc);
+  }
+
+  /* the ladder, so you can see where it came from */
+  if (!msLadderBuilt) {
+    $('#msLadder').innerHTML = MILESTONES.map(m =>
+      `<li data-m="${m}">${fmtMilestone(m)}</li>`).join('');
+    msLadderBuilt = true;
+  }
+  $$('#msLadder li').forEach((li, i) => {
+    li.classList.toggle('is-done', i < done);
+    li.classList.toggle('is-next', i === done);
+  });
+
+  /* only celebrate a rung cleared while somebody is actually watching */
+  if (msCleared !== null && done > msCleared) {
+    const just = MILESTONES[done - 1];
+    const el = $('#milestone');
+    el.classList.remove('is-hit');
+    void el.offsetWidth;
+    el.classList.add('is-hit');
+    toast(fmtMilestone(just) + ' CLEARED 🐂 BULL RUN AGAIN');
+    popConfetti();
+  }
+  msCleared = done;
+}
+
+/* cheap DOM confetti — no library, and it cleans up after itself */
+function popConfetti(n = 90) {
+  if (REDUCED) return;
+  const COLORS = ['#FFE500', '#FF2D2D', '#39D353', '#00C2FF', '#B537F2', '#FF8A00', '#F5F3EC'];
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  box.setAttribute('aria-hidden', 'true');
+  let longest = 0;
+  for (let i = 0; i < n; i++) {
+    const bit = document.createElement('i');
+    const dur = 2.4 + Math.random() * 2.2;
+    longest = Math.max(longest, dur);
+    bit.style.left = (Math.random() * 100) + 'vw';
+    bit.style.background = COLORS[(Math.random() * COLORS.length) | 0];
+    bit.style.animationDuration = dur + 's';
+    bit.style.animationDelay = (Math.random() * 0.7) + 's';
+    bit.style.transform = 'rotate(' + (Math.random() * 360) + 'deg)';
+    if (Math.random() < 0.35) bit.style.borderRadius = '50%';
+    box.appendChild(bit);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), (longest + 1.2) * 1000);
+}
+
 /* ---- render everything ---- */
 function render() {
   const p = M.pair;
@@ -529,7 +624,9 @@ function render() {
 
   /* hero + nav */
   $('#hsPrice').textContent = fmtPrice(price);
-  $('#hsMcap').textContent  = fmtCompact(p.marketCap ?? p.fdv);
+  const mcap = p.marketCap ?? p.fdv;
+  $('#hsMcap').textContent  = fmtCompact(mcap);
+  renderMilestone(mcap);
   const h24 = change.h24 ?? 0;
   const hsc = $('#hsChange');
   hsc.textContent = fmtPct(h24);

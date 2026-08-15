@@ -201,6 +201,23 @@ No API key, no backend — the call runs straight from the browser.
 - If the feed is unreachable the terminal shows `FEED OFFLINE` rather than
   stale or invented numbers.
 
+### The milestone bar
+
+Sits directly under the hero — the first thing you meet on the way down. It
+reads the market cap the terminal is already polling, so it costs no extra
+request and needs no key.
+
+The bar measures from the **previous** rung of the ladder to the next, not
+from zero. From zero it would crawl slower at every level — the run from $10M
+to $25M would show as a nearly full bar that never visibly moves — and the
+whole point is that it does something. A moving hatch pattern over the fill
+keeps even a 5% bar reading as alive.
+
+Clearing a rung while the page is open fires the celebration: the section
+flashes, a toast names the milestone, and confetti drops. It deliberately does
+**not** fire when you simply arrive on an already-cleared level — the counter
+starts as `null` and only celebrates a rung crossed with somebody watching.
+
 ## Local preview
 
 Any static server works. With Python:

@@ -293,6 +293,69 @@ code{font-family:var(--font-mono)}
 /* =========================================================
    TICKER
    ========================================================= */
+/* =========================================================
+   MILESTONE — the first thing under the hero
+   ========================================================= */
+.milestone{position:relative;z-index:6;padding:clamp(1.5rem,3.5vw,2.4rem) 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#0E0E13,#0A0A0C);overflow:hidden}
+.milestone__glow{position:absolute;inset:-60% 20% auto;height:200%;pointer-events:none;
+  background:radial-gradient(50% 40% at 50% 50%,rgba(255,229,0,.13),transparent 70%)}
+.milestone__inner{position:relative}
+
+.milestone__head{display:flex;align-items:flex-end;justify-content:space-between;gap:1.5rem;margin-bottom:.85rem}
+.milestone__eyebrow{display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.34em;
+  color:var(--yellow);margin-bottom:.3rem}
+.milestone__target{display:block;font-family:var(--font-display);line-height:.88;
+  font-size:clamp(2rem,5.4vw,3.6rem);letter-spacing:-.005em;text-transform:uppercase}
+.milestone__pct{font-family:var(--font-display);line-height:.88;font-size:clamp(1.7rem,4.4vw,3rem);
+  color:var(--yellow);white-space:nowrap}
+
+.milestone__bar{position:relative;height:16px;background:rgba(245,243,236,.07);
+  border:1px solid var(--line-2);overflow:hidden}
+.milestone__fill{position:absolute;inset:0 auto 0 0;width:0;
+  background:var(--rainbow);background-size:220% 100%;
+  animation:rainbowSlide 6s linear infinite;
+  transition:width 1.1s var(--ease);
+  box-shadow:0 0 24px rgba(255,229,0,.45)}
+/* the moving hatch is what makes a 5% bar still read as "working" */
+.milestone__fill::after{content:'';position:absolute;inset:0;opacity:.28;
+  background:repeating-linear-gradient(115deg,transparent 0 10px,rgba(0,0,0,.55) 10px 20px);
+  animation:msHatch 1.1s linear infinite}
+@keyframes msHatch{to{background-position:28px 0}}
+
+.milestone__foot{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;margin-top:.7rem;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;color:var(--muted)}
+.milestone__foot b{font-family:var(--font-black);font-size:13px;letter-spacing:.02em;color:var(--bone)}
+.milestone__togo b{color:var(--yellow)}
+
+.milestone__ladder{list-style:none;display:flex;flex-wrap:wrap;gap:.35rem;margin:1rem 0 0;padding:0}
+.milestone__ladder li{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  padding:.3rem .5rem;border:1px solid var(--line);border-radius:2px;color:rgba(245,243,236,.3)}
+.milestone__ladder li.is-done{color:#000;background:var(--yellow);border-color:var(--yellow)}
+.milestone__ladder li.is-next{color:var(--yellow);border-color:rgba(255,229,0,.5)}
+
+/* the moment it actually clears one */
+.milestone.is-hit{animation:msHit 1.1s var(--ease)}
+@keyframes msHit{0%{background:var(--yellow)}100%{background:linear-gradient(180deg,#0E0E13,#0A0A0C)}}
+.milestone.is-hit .milestone__target,
+.milestone.is-hit .milestone__pct{animation:msPop .8s var(--ease)}
+@keyframes msPop{0%{transform:scale(1)}35%{transform:scale(1.14)}100%{transform:scale(1)}}
+
+.confetti{position:fixed;inset:0;z-index:940;pointer-events:none;overflow:hidden}
+.confetti i{position:absolute;top:-6vh;width:9px;height:14px;opacity:.95;
+  animation:confFall linear forwards}
+@keyframes confFall{to{transform:translateY(112vh) rotate(760deg);opacity:.15}}
+
+@media(max-width:640px){
+  .milestone__head{align-items:center}
+  .milestone__ladder li:nth-child(n+9){display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .milestone__fill,.milestone__fill::after{animation:none}
+  .milestone.is-hit,.milestone.is-hit .milestone__target,.milestone.is-hit .milestone__pct{animation:none}
+}
+
 .ticker{position:relative;z-index:5;background:var(--yellow);color:#000;padding:.85rem 0;overflow:hidden;
   border-top:3px solid #000;border-bottom:3px solid #000;transform:rotate(-1deg) scale(1.03);margin:2rem 0}
 .ticker__track{display:flex;width:max-content;animation:kineticSlide 26s linear infinite}
